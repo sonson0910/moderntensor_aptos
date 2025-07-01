@@ -1,0 +1,10 @@
+[package]
+name = "moderntensor"
+version = "1.0.0"
+
+[addresses]
+moderntensor = "8e6db94cbf7e6b2d5428333207338f0619933c628be5bc3eb0c0541b53cf2184"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-core", subdir = "aptos-move/framework/aptos-framework", rev = "main" }
+AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core", subdir = "aptos-move/framework/aptos-stdlib", rev = "main" }

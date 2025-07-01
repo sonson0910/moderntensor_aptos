@@ -1,33 +1,26 @@
-// Module lưu trữ quỹ Treasury – phần token phân bổ cho hệ thống (quản trị, quỹ phát triển...)
-module 0xModerntensor::treasury {
+module moderntensor::treasury {
     use std::signer;
-    use std::coin;
-    use std::error;
-    use 0x1::aptos_coin;
+    use aptos_framework::coin;
+    use moderntensor::token_init::MTNSR;
 
-    struct Treasury has key {
-        vault: coin::Coin<aptos_coin::AptosCoin>,
+    struct TreasuryState has key {
+        balance: u64,
     }
 
-    public entry fun init(account: &signer) {
-        assert!(signer::address_of(account) == @0xModerntensor, 400);
-        let c = coin::zero<aptos_coin::AptosCoin>();
-        move_to(account, Treasury { vault: c });
+    public entry fun initialize_treasury(admin: &signer) {
+        move_to(admin, TreasuryState { balance: 0 });
     }
 
-    public entry fun deposit(account: &signer, amount: coin::Coin<aptos_coin::AptosCoin>) {
-        let t = borrow_global_mut<Treasury>(@0xModerntensor);
-        coin::merge(&mut t.vault, amount);
+    public entry fun deposit_to_treasury(admin: &signer, amount: u64) acquires TreasuryState {
+        let state = borrow_global_mut<TreasuryState>(signer::address_of(admin));
+        state.balance = state.balance + amount;
+        coin::transfer<MTNSR>(admin, signer::address_of(admin), amount);
     }
 
-    public fun balance(): u64 {
-        let t = borrow_global<Treasury>(@0xModerntensor);
-        coin::value(&t.vault)
-    }
-
-    /// Internal dùng để trích token từ Treasury ra (ví dụ chi cho phát triển, airdrop...)
-    public fun withdraw_internal(amount: u64): coin::Coin<aptos_coin::AptosCoin> {
-        let t = borrow_global_mut<Treasury>(@0xModerntensor);
-        coin::extract(&mut t.vault, amount)
+    public entry fun withdraw_from_treasury(admin: &signer, recipient: address, amount: u64) acquires TreasuryState {
+        let state = borrow_global_mut<TreasuryState>(signer::address_of(admin));
+        assert!(state.balance >= amount, 1004);
+        state.balance = state.balance - amount;
+        coin::transfer<MTNSR>(admin, recipient, amount);
     }
 }

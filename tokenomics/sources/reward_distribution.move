@@ -3,7 +3,7 @@ module moderntensor::reward_distribution {
     use std::vector;
     use aptos_std::table::{Self, Table};
     use aptos_framework::coin;
-    use moderntensor::token_init::MTNSR;
+    use moderntensor::token_init::MTNSRTEST01;
 
     struct DistributionState has key {
         subnet_rewards: Table<address, u64>,
@@ -78,7 +78,7 @@ module moderntensor::reward_distribution {
                 0
             };
             if (reward > 0) {
-                coin::transfer<MTNSR>(admin, entity, reward);
+                coin::transfer<MTNSRTEST01>(admin, entity, reward);
             };
             i = i + 1;
         };
@@ -94,7 +94,7 @@ module moderntensor::reward_distribution {
                 0
             };
             if (reward > 0) {
-                coin::transfer<MTNSR>(admin, entity, reward);
+                coin::transfer<MTNSRTEST01>(admin, entity, reward);
             };
             i = i + 1;
         };
@@ -110,7 +110,7 @@ module moderntensor::reward_distribution {
                 0
             };
             if (reward > 0) {
-                coin::transfer<MTNSR>(admin, entity, reward);
+                coin::transfer<MTNSRTEST01>(admin, entity, reward);
             };
             i = i + 1;
         };

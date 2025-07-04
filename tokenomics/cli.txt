@@ -1,16 +1,18 @@
+git push origin feature/tung-tokenomic
+##
+aptos init profile default
 build:
 aptos move compile --package-dir .
 deploy:
 aptos move publish --profile default --max-gas 50000
 
 ## chuyển coin
-aptos move run \
-  --function-id your_module::coin_transfer::transfer_apt --args address:<RECIPIENT_ADDRESS> u64:<AMOUNT> --profile default
+aptos move run --function-id 2f2bf81dc637cd21143c90e643e8853547e0f511154397411dd01966c12a0b08::coin_transfer::transfer_apt --args address:157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600 u64:8868000 --profile default3
 
 ## register coin
 
-aptos move run --function-id e0e788e54cfa46b3107fbe3c8b81dda5612ca28450c99485d0953f04a5f47522::token_init::register_coin   --profile default
-aptos move run --function-id 8ae05760d2e1f0fec63c91b483de68131be23e1c9d3da3b93d1a814a944f1db7::token_init::initialize --args u64:100000000000000000 --profile default
+aptos move run --function-id 2f2bf81dc637cd21143c90e643e8853547e0f511154397411dd01966c12a0b08::token_init::register_coin   --profile test_team_address
+aptos move run --function-id 2f2bf81dc637cd21143c90e643e8853547e0f511154397411dd01966c12a0b08::token_init::initialize --args u64:100000000000000000 --profile default
 
 initialize coin for account allocation
 
@@ -20,17 +22,28 @@ aptos move run  --function-id 0b5cd80d66f19342bcd28c870571f786b1ac1bc3e2008cc6e9
 list
 aptos account list --account e0e788e54cfa46b3107fbe3c8b81dda5612ca28450c99485d0953f04a5f47522
 ## initialize vesting:
-aptos move run --function-id 8ae05760d2e1f0fec63c91b483de68131be23e1c9d3da3b93d1a814a944f1db7::vesting::initialize_vesting --args u64:500000000000000   --profile default
+aptos move run --function-id 2f2bf81dc637cd21143c90e643e8853547e0f511154397411dd01966c12a0b08::vesting::initialize_vesting --args u64:500000000000000   --profile default
 
-##step 1 lock token in resource VestingState
-aptos move run --function-id 0b5cd80d66f19342bcd28c870571f786b1ac1bc3e2008cc6e9c36fecde480c3d::vesting::setup_vesting --args address:e0e788e54cfa46b3107fbe3c8b81dda5612ca28450c99485d0953f04a5f47522 u64:100000000000000 u64:30 u64:60 --profile default
+##step 1 lock token in resource VestingState bao gồm thời gian bắt đầu phân bổ và tổng thời gian phân bổ, phân bổ theo tuyển tính tức là thời gian trôi qua bao lâu thì sẽ nhận được timepassed/totaltime ví dụ tuyến tính trong 2 năm thì sẽ được phân bổ dần theo thời điểm gọi sự kiện
+aptos move run --function-id 2f2bf81dc637cd21143c90e643e8853547e0f511154397411dd01966c12a0b08::vesting::setup_vesting --args address:e0e788e54cfa46b3107fbe3c8b81dda5612ca28450c99485d0953f04a5f47522 u64:1000000000000 u64:1751604277 u64:150 --profile default
 
 ## xem thông tin 1 coin cụ thể
-aptos account list --account 8ae05760d2e1f0fec63c91b483de68131be23e1c9d3da3b93d1a814a944f1db7 --query resources
+aptos account list --account 157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600 --query resources
 aptos account balance   --account 0x8ae05760d2e1f0fec63c91b483de68131be23e1c9d3da3b93d1a814a944f1db7   --coin-type 0x8ae05760d2e1f0fec63c91b483de68131be23e1c9d3da3b93d1a814a944f1db7::token_init::MTNSRTEST01
 
 ## setup vesting ch người nhận:
 aptos move run --function-id 8ae05760d2e1f0fec63c91b483de68131be23e1c9d3da3b93d1a814a944f1db7::vesting::setup_vesting --args address:c471cbe7ab6ed58ca6ab15359e7ed80ac4393f8d75c9646633e806ac06409c6c u64:100000000000000 u64:1751518200 u64:120 --profile default
 
 
-aptos move run --function-id 8ae05760d2e1f0fec63c91b483de68131be23e1c9d3da3b93d1a814a944f1db7::vesting::release_vesting --args address:c471cbe7ab6ed58ca6ab15359e7ed80ac4393f8d75c9646633e806ac06409c6c --profile default
+aptos move run --function-id 2f2bf81dc637cd21143c90e643e8853547e0f511154397411dd01966c12a0b08::vesting::release_vesting --args address:e0e788e54cfa46b3107fbe3c8b81dda5612ca28450c99485d0953f04a5f47522 --profile default
+## Khởi tạo Vault & EpochPool
+aptos move run --function-id 157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600::reward_emission::initialize_vault_and_epoch --args u64:10000000000000 --profile default
+
+## khởi tạo thông số phát hành
+aptos move run --function-id 157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600::reward_emission::initialize_emission --args u64:10000 u64:30 u64:300 --profile default
+
+## phát hành token định kỳ:
+aptos move run --function-id 157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600::reward_emission::emit_reward --profile default
+
+## kiểm tra số dư EpochPool
+aptos move run --function-id 157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600::reward_emission::get_epoch_pool_balance --args address:157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600 --profile default

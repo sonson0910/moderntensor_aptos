@@ -52,3 +52,101 @@ aptos move run --function-id 157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861d
 aptos move run --function-id moderntensor::reward_emission::initialize_vault_and_epoch --args u64:50000000000000000 --profile testnet
 update: initialize_emission
 aptos move run --function-id moderntensor::reward_emission::initialize_emission --args u64:50000000000000000 u64:60 u64:17520 --profile default
+
+
+⚙️ 1. Khởi tạo Vault + EpochPool
+bash
+Sao chép
+Chỉnh sửa
+aptos move run \
+  --function-id moderntensor::reward_emission::initialize_vault_and_epoch \
+  --args u64:<deposit_amount> \
+  --profile default
+📌 Ví dụ:
+
+bash
+Sao chép
+Chỉnh sửa
+aptos move run \
+  --function-id moderntensor::reward_emission::initialize_vault_and_epoch \
+  --args u64:100000000000 \
+  --profile default
+⚠️ Yêu cầu tài khoản đang có đủ MTNSRTEST01 để gửi vào Vault.
+
+⚙️ 2. Khởi tạo cơ chế phát thưởng
+bash
+Sao chép
+Chỉnh sửa
+aptos move run \
+  --function-id moderntensor::reward_emission::initialize_emission \
+  --args u64:<total_supply> u64:<seconds_per_period> u64:<seconds_per_halving> \
+  --profile default
+📌 Ví dụ:
+
+bash
+Sao chép
+Chỉnh sửa
+aptos move run \
+  --function-id moderntensor::reward_emission::initialize_emission \
+  --args u64:500000000000000 u64:432000 u64:126144000 \
+  --profile default
+Giải thích:
+
+total_supply: 500_000_000 * 1_000_000 (nếu token có 6 decimals)
+
+seconds_per_period: 5 ngày = 60 * 60 * 24 * 5 = 432000
+
+seconds_per_halving: 4 năm = 60 * 60 * 24 * 365 * 4 = 126144000
+
+⚙️ 3. Gọi phân phối phần thưởng
+bash
+Sao chép
+Chỉnh sửa
+aptos move run \
+  --function-id moderntensor::reward_emission::emit_reward \
+  --profile default
+⚠️ Chỉ chạy được nếu đã đến hạn (quá seconds_per_period kể từ lần cuối).
+
+⚙️ 4. Nạp thêm token vào Vault
+bash
+Sao chép
+Chỉnh sửa
+aptos move run \
+  --function-id moderntensor::reward_emission::top_up_vault \
+  --args u64:<amount> \
+  --profile default
+📌 Ví dụ:
+
+bash
+Sao chép
+Chỉnh sửa
+aptos move run \
+  --function-id moderntensor::reward_emission::top_up_vault \
+  --args u64:100000000000 \
+  --profile default
+⚙️ 5. Lấy token ra từ Epoch Pool (thường để kiểm tra)
+bash
+Sao chép
+Chỉnh sửa
+aptos move run \
+  --function-id moderntensor::reward_emission::extract_from_epoch_pool \
+  --args u64:<amount> \
+  --profile default
+⚙️ 6. Cập nhật thông số phát thưởng
+bash
+Sao chép
+Chỉnh sửa
+aptos move run \
+  --function-id moderntensor::reward_emission::update_emission_params \
+  --args u64:<new_total_supply> u64:<new_seconds_per_halving> \
+  --profile default
+🧪 Gợi ý kiểm tra trạng thái
+Bạn có thể dùng REST API hoặc câu lệnh này để xem số dư:
+
+bash
+Sao chép
+Chỉnh sửa
+aptos account get-resource \
+  --account <your-address> \
+  --resource-type moderntensor::reward_emission::RewardState \
+  --profile default

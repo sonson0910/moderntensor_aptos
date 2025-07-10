@@ -92,7 +92,9 @@ module moderntensor::reward_emission {
 
         let total_elapsed = now - state.start_time;
         let halvings = total_elapsed / state.halving_interval;
-        let adjusted_reward = state.base_reward / (1 << (halvings as u8));
+        let shift = if (halvings > 63) { 63 } else { halvings };
+        let adjusted_reward = state.base_reward >> (shift as u8);
+
 
         let vault = borrow_global_mut<CommunityVault<MTNSRTEST01>>(admin_addr);
         assert!(coin::value(&vault.pool) >= adjusted_reward, 107);

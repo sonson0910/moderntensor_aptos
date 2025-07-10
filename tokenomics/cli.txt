@@ -47,3 +47,8 @@ aptos move run --function-id 157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861d
 
 ## kiểm tra số dư EpochPool
 aptos move run --function-id 157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600::reward_emission::get_epoch_pool_balance --args address:157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600 --profile default
+
+# Khởi tạo vault và epoch pool với 500 triệu token
+aptos move run --function-id moderntensor::reward_emission::initialize_vault_and_epoch --args u64:50000000000000000 --profile testnet
+update: initialize_emission
+aptos move run --function-id moderntensor::reward_emission::initialize_emission --args u64:50000000000000000 u64:60 u64:17520 --profile default

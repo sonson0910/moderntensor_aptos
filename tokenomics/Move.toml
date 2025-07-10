@@ -1,0 +1,10 @@
+[package]
+name = "moderntensor"
+version = "1.0.0"
+
+[addresses]
+moderntensor = "157fd8f7443c66f27494055ce17effdbcdc441881dcb4e6861df88dd215fe600" 
+tests = "0x1" # hoặc một địa chỉ ảo khác như 0x42
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-core", subdir = "aptos-move/framework/aptos-framework", rev = "main" }
+AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core", subdir = "aptos-move/framework/aptos-stdlib", rev = "main" }

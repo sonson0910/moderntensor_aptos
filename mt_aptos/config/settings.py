@@ -561,6 +561,22 @@ class Settings(BaseSettings):
         description="Time window in seconds for rate limiting"
     )
 
+    # --- Metagraph Update Configuration ---
+    METAGRAPH_UPDATE_INTERVAL_MINUTES: int = Field(
+        default=5,
+        description="Minimum interval in minutes between metagraph updates to avoid excessive transactions"
+    )
+    
+    METAGRAPH_UPDATE_THRESHOLD_SCORES: int = Field(
+        default=1,
+        description="Minimum number of new scores required to trigger metagraph update"
+    )
+    
+    METAGRAPH_UPDATE_SKIP_EMPTY: bool = Field(
+        default=False,
+        description="Skip metagraph update if no new scores are available"
+    )
+
     def get_validator_config(self, validator_id: int = 1) -> dict:
         """Get configuration for a specific validator"""
         if validator_id == 1:

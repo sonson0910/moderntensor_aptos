@@ -241,15 +241,34 @@ class ValidatorNodeConsensus:
             slot: Slot number
             
         Returns:
-            Dictionary mapping miner UID to score
+            Dictionary mapping miner UID to score (always includes 0 scores for non-responsive miners)
         """
         local_scores = {}
+        
+        # 🔍 DEBUG: Check all score sources
+        logger.info(f"🔍 {self.uid_prefix} DEBUG: Collecting local scores for slot {slot}")
+        logger.info(f"🔍 {self.uid_prefix} DEBUG: slot_scores keys: {list(self.core.slot_scores.keys())}")
+        logger.info(f"🔍 {self.uid_prefix} DEBUG: cycle_scores keys: {list(self.core.cycle_scores.keys())}")
+        logger.info(f"🔍 {self.uid_prefix} DEBUG: validator_scores keys: {list(self.core.validator_scores.keys()) if hasattr(self.core, 'validator_scores') else 'N/A'}")
+        logger.info(f"🔍 {self.uid_prefix} DEBUG: results_buffer keys: {list(self.core.results_buffer.keys())}")
+        logger.info(f"🔍 {self.uid_prefix} DEBUG: tasks_sent keys: {list(self.core.tasks_sent.keys())}")
+        logger.info(f"🔍 {self.uid_prefix} DEBUG: miners_info count: {len(self.core.miners_info)} registered miners")
+        if self.core.miners_info:
+            for miner_uid, miner_info in list(self.core.miners_info.items())[:3]:  # Show first 3
+                status = getattr(miner_info, 'status', 'unknown')
+                logger.info(f"🔍 {self.uid_prefix} DEBUG: Miner {miner_uid} status: {status}")
+        else:
+            logger.warning(f"🔍 {self.uid_prefix} DEBUG: No miners_info available!")
+        
+        # Step 1: Try to get existing scores first
+        scores_found = False
         
         # Prioritize slot_scores if available
         if slot in self.core.slot_scores and self.core.slot_scores[slot]:
             for score in self.core.slot_scores[slot]:
                 local_scores[score.miner_uid] = score.score
-            logger.info(f"{self.uid_prefix} Collected {len(local_scores)} local scores from slot_scores for slot {slot}")
+            logger.info(f"✅ {self.uid_prefix} Found {len(local_scores)} existing scores from slot_scores for slot {slot}")
+            scores_found = True
         
         # Fallback to cycle_scores if slot_scores not available
         elif self.core.cycle_scores:
@@ -257,18 +276,70 @@ class ValidatorNodeConsensus:
                 if scores_list:
                     latest_score = scores_list[-1]
                     local_scores[latest_score.miner_uid] = latest_score.score
-            logger.info(f"{self.uid_prefix} Collected {len(local_scores)} local scores from cycle_scores for slot {slot}")
+            if local_scores:
+                logger.info(f"✅ {self.uid_prefix} Found {len(local_scores)} existing scores from cycle_scores")
+                scores_found = True
         
         # Fallback to validator_scores
-        elif self.core.validator_scores:
+        elif hasattr(self.core, 'validator_scores') and self.core.validator_scores:
             for task_id, scores_list in self.core.validator_scores.items():
                 if scores_list:
                     latest_score = scores_list[-1]
                     local_scores[latest_score.miner_uid] = latest_score.score
-            logger.info(f"{self.uid_prefix} Collected {len(local_scores)} local scores from validator_scores for slot {slot}")
+            if local_scores:
+                logger.info(f"✅ {self.uid_prefix} Found {len(local_scores)} existing scores from validator_scores")
+                scores_found = True
         
-        else:
-            logger.warning(f"{self.uid_prefix} No local scores available for consensus in slot {slot}")
+        # Step 2: If no existing scores, generate from tasks_sent and results_buffer
+        if not scores_found and self.core.tasks_sent:
+            logger.info(f"🔄 {self.uid_prefix} No existing scores found, generating from tasks and results")
+            
+            # Process all sent tasks
+            for task_id, assignment in self.core.tasks_sent.items():
+                miner_uid = assignment.miner_uid
+                
+                if task_id in self.core.results_buffer:
+                    # Task has result - calculate score
+                    result = self.core.results_buffer[task_id]
+                    try:
+                        score_value = self.cardano_calculate_score(assignment.task_data, result.result_data)
+                        local_scores[miner_uid] = score_value
+                        logger.info(f"📊 {self.uid_prefix} Score from result: {score_value:.3f} for miner {miner_uid}")
+                    except Exception as e:
+                        logger.error(f"❌ {self.uid_prefix} Error calculating score for task {task_id}: {e}")
+                        # Even on error, assign 0 score
+                        local_scores[miner_uid] = 0.0
+                        logger.warning(f"⚠️ {self.uid_prefix} Assigned 0 score due to error for miner {miner_uid}")
+                else:
+                    # Task has no result - assign 0 score
+                    local_scores[miner_uid] = 0.0
+                    logger.warning(f"⚠️ {self.uid_prefix} No result received: 0 score for miner {miner_uid} (task {task_id})")
+            
+            logger.info(f"✅ {self.uid_prefix} Generated {len(local_scores)} total scores (including 0 for non-responsive miners)")
+        
+        # Step 3: If still no scores and no tasks sent - generate from registered miners
+        elif not scores_found and not self.core.tasks_sent:
+            logger.warning(f"⚠️ {self.uid_prefix} No scores available and no tasks sent for slot {slot}")
+            
+            # Still generate scores for registered miners (baseline/maintenance scoring)
+            if self.core.miners_info:
+                logger.info(f"🔄 {self.uid_prefix} Generating baseline scores for {len(self.core.miners_info)} registered miners")
+                
+                for miner_uid, miner_info in self.core.miners_info.items():
+                    # Assign default score based on miner's current status
+                    if hasattr(miner_info, 'status') and miner_info.status == 'active':
+                        # Active miners get small maintenance score to prevent trust decay
+                        baseline_score = 0.1  # Small positive score for being online/registered
+                        local_scores[miner_uid] = baseline_score
+                        logger.info(f"📊 {self.uid_prefix} Baseline score {baseline_score:.3f} for active miner {miner_uid}")
+                    else:
+                        # Inactive miners get 0 score
+                        local_scores[miner_uid] = 0.0
+                        logger.warning(f"⚠️ {self.uid_prefix} Zero score for inactive miner {miner_uid}")
+                
+                logger.info(f"✅ {self.uid_prefix} Generated {len(local_scores)} baseline scores for registered miners")
+            else:
+                logger.warning(f"⚠️ {self.uid_prefix} No registered miners found - no scores to generate")
         
         return local_scores
 
@@ -520,6 +591,22 @@ class ValidatorNodeConsensus:
         logger.info(f"🔍 {self.uid_prefix} DEBUG: final_scores = {final_scores}")
         logger.info(f"🔍 {self.uid_prefix} DEBUG: miners_info count = {len(self.core.miners_info) if self.core.miners_info else 0}")
         logger.info(f"🔍 {self.uid_prefix} DEBUG: contract_address = {self.core.contract_address}")
+        
+        # REMOVED: Skip check for empty final_scores - now we always process
+        # Even 0 scores are important for updating miner performance
+        
+        # Check if we have the necessary components
+        if not hasattr(self.core, 'client') or not self.core.client:
+            logger.error(f"❌ {self.uid_prefix} No Aptos client available for blockchain submission")
+            return
+            
+        if not hasattr(self.core, 'account') or not self.core.account:
+            logger.error(f"❌ {self.uid_prefix} No account available for blockchain submission")
+            return
+            
+        if not hasattr(self.core, 'contract_address') or not self.core.contract_address:
+            logger.error(f"❌ {self.uid_prefix} No contract address available for blockchain submission")
+            return
         
         try:
             from aptos_sdk.transactions import EntryFunction, TransactionArgument, TransactionPayload

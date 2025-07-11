@@ -180,11 +180,25 @@ class ValidatorNode:
         """Main operation loop for the validator node."""
         logger.info(f"{self.uid_prefix} Starting main operation loop")
         
+        # Track last processed slot for each phase to avoid duplicate processing
+        last_processed_slots = {
+            SlotPhase.TASK_ASSIGNMENT: -1,
+            SlotPhase.TASK_EXECUTION: -1,
+            SlotPhase.CONSENSUS_SCORING: -1,
+            SlotPhase.METAGRAPH_UPDATE: -1
+        }
+        
         while True:
             try:
                 # Get current slot and phase
                 current_slot = self.core.get_current_blockchain_slot()
                 phase, time_in_phase, time_remaining = self.core.get_slot_phase(current_slot)
+                
+                # Skip processing if we already handled this slot for this phase
+                if last_processed_slots[phase] >= current_slot:
+                    logger.debug(f"{self.uid_prefix} Slot {current_slot} already processed for phase {phase}, skipping")
+                    await asyncio.sleep(5)  # Short sleep to avoid busy waiting
+                    continue
                 
                 logger.debug(f"{self.uid_prefix} Slot {current_slot}, Phase: {phase}, "
                            f"Time in phase: {time_in_phase}s, Remaining: {time_remaining}s")
@@ -192,15 +206,24 @@ class ValidatorNode:
                 # Handle phase-specific operations
                 if phase == SlotPhase.TASK_ASSIGNMENT:
                     await self._handle_task_assignment_phase(current_slot)
+                    last_processed_slots[phase] = current_slot
                 elif phase == SlotPhase.TASK_EXECUTION:
                     await self._handle_task_execution_phase(current_slot)
+                    last_processed_slots[phase] = current_slot
                 elif phase == SlotPhase.CONSENSUS_SCORING:
                     await self._handle_consensus_scoring_phase(current_slot)
+                    last_processed_slots[phase] = current_slot
                 elif phase == SlotPhase.METAGRAPH_UPDATE:
                     await self._handle_metagraph_update_phase(current_slot)
+                    last_processed_slots[phase] = current_slot
                 
-                # Wait before next iteration
-                await asyncio.sleep(10)
+                # Adaptive sleep based on phase and remaining time
+                if time_remaining > 30:
+                    sleep_time = min(30, time_remaining / 2)  # Sleep for half the remaining time, max 30s
+                else:
+                    sleep_time = 5  # Short sleep when phase is about to end
+                
+                await asyncio.sleep(sleep_time)
                 
             except asyncio.CancelledError:
                 break
@@ -318,6 +341,35 @@ class ValidatorNode:
         logger.debug(f"{self.uid_prefix} Handling metagraph update phase for slot {slot}")
         
         try:
+            # Check if we have already processed this slot
+            if hasattr(self.core, '_last_metagraph_update_slot') and self.core._last_metagraph_update_slot >= slot:
+                logger.debug(f"{self.uid_prefix} Metagraph already updated for slot {slot}, skipping")
+                return
+            
+            # Check minimum interval between updates
+            if hasattr(self.core, '_last_metagraph_update_time'):
+                time_since_last_update = time.time() - self.core._last_metagraph_update_time
+                min_interval = self.core.settings.METAGRAPH_UPDATE_INTERVAL_MINUTES * 60
+                
+                if time_since_last_update < min_interval:
+                    logger.debug(f"{self.uid_prefix} Too soon for metagraph update ({time_since_last_update:.1f}s < {min_interval}s), skipping")
+                    return
+            
+            # Check if we have new data to update
+            local_scores = await self.consensus._collect_local_scores_for_consensus(slot)
+            
+            # 🔍 DEBUG: Show what scores we found
+            logger.info(f"🔍 {self.uid_prefix} DEBUG: Found {len(local_scores) if local_scores else 0} local scores for slot {slot}")
+            if local_scores:
+                for miner_uid, score in local_scores.items():
+                    logger.info(f"🔍 {self.uid_prefix} DEBUG: Miner {miner_uid} → Score {score:.4f}")
+            else:
+                logger.info(f"🔍 {self.uid_prefix} DEBUG: No local scores found for slot {slot}")
+            
+            # REMOVED: Skip logic when no scores - now we always update
+            # Always proceed with metagraph update, even if no scores (0 scores for non-responsive miners)
+            logger.info(f"🚀 {self.uid_prefix} Starting metagraph update for slot {slot} with {len(local_scores) if local_scores else 0} scores")
+            
             # In flexible mode, metagraph update MUST be synchronized
             if self.core.consensus_mode == "flexible":
                 # Flexible mode: Force synchronization for metagraph update
@@ -341,38 +393,45 @@ class ValidatorNode:
                 
             # else: continuous mode proceeds without coordination
             
-            # Collect local scores for consensus
-            local_scores = await self.consensus._collect_local_scores_for_consensus(slot)
-            
             # Coordinate synchronized metagraph update (for flexible and synchronized modes)
             if self.core.consensus_mode in ["flexible", "synchronized"]:
                 try:
+                    logger.info(f"🤝 {self.uid_prefix} Attempting synchronized metagraph update...")
                     success = await self.consensus._coordinate_synchronized_metagraph_update(slot, local_scores)
                     if success:
-                        logger.info(f"{self.uid_prefix} Synchronized metagraph update completed for slot {slot}")
+                        logger.info(f"✅ {self.uid_prefix} Synchronized metagraph update completed for slot {slot}")
                     else:
-                        logger.warning(f"{self.uid_prefix} Synchronized update failed, falling back to individual update")
+                        logger.warning(f"⚠️  {self.uid_prefix} Synchronized update failed, falling back to individual update")
                         await self.consensus._apply_consensus_scores_to_metagraph(slot, local_scores)
                 except Exception as e:
-                    logger.error(f"{self.uid_prefix} Error in metagraph update coordination: {e}")
+                    logger.error(f"❌ {self.uid_prefix} Error in metagraph update coordination: {e}")
                     # Fallback to individual update
+                    logger.info(f"🔄 {self.uid_prefix} Falling back to individual metagraph update...")
                     await self.consensus._apply_consensus_scores_to_metagraph(slot, local_scores)
             else:
                 # Continuous mode: Individual update
+                logger.info(f"🔄 {self.uid_prefix} Applying individual metagraph update...")
                 await self.consensus._apply_consensus_scores_to_metagraph(slot, local_scores)
             
-            # Submit to blockchain if we have final scores
-            if local_scores:
-                await self.consensus.cardano_submit_consensus_to_blockchain(local_scores)
+            # Submit to blockchain ALWAYS - even if we have 0 scores (important for miner penalty)
+            logger.info(f"📤 {self.uid_prefix} Submitting metagraph update to blockchain for slot {slot} with {len(local_scores) if local_scores else 0} scores")
+            await self.consensus.cardano_submit_consensus_to_blockchain(local_scores)
+            logger.info(f"✅ {self.uid_prefix} Blockchain submission completed for slot {slot}")
             
             # Clean up completed tasks
             self.tasks.cleanup_completed_tasks()
             
-            # Save state
+            # Save state and mark this slot as processed
             self.core._save_current_cycle(slot)
+            self.core._last_metagraph_update_slot = slot
+            self.core._last_metagraph_update_time = time.time()
+            
+            logger.info(f"🎉 {self.uid_prefix} ✅ Metagraph update completed successfully for slot {slot}")
             
         except Exception as e:
-            logger.error(f"{self.uid_prefix} Error in metagraph update phase: {e}")
+            logger.error(f"❌ {self.uid_prefix} Error in metagraph update phase: {e}")
+            import traceback
+            logger.error(f"❌ {self.uid_prefix} Traceback: {traceback.format_exc()}")
 
     # === Public API Methods (Backward Compatibility) ===
     

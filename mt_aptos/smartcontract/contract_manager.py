@@ -74,7 +74,7 @@ class ContractManager:
             try:
                 # Run aptos move compile
                 result = subprocess.run(
-                    ["aptos", "move", "compile", "--named-addresses", f"moderntensor=0x{settings.APTOS_CONTRACT_ADDRESS}"],
+                    ["aptos", "move", "compile", "--named-addresses", f"moderntensor_contract=0x{settings.APTOS_CONTRACT_ADDRESS}"],
                     capture_output=True,
                     text=True,
                     check=True
@@ -163,7 +163,7 @@ class ContractManager:
             try:
                 cmd = [
                     "aptos", "move", "publish",
-                    "--named-addresses", f"moderntensor=0x{settings.APTOS_CONTRACT_ADDRESS}",
+                    "--named-addresses", f"moderntensor_contract=0x{settings.APTOS_CONTRACT_ADDRESS}",
                     "--assume-yes"
                 ]
                 

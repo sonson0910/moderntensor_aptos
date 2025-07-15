@@ -347,9 +347,11 @@ async def broadcast_scores_logic(
     for peer_info in active_validator_peers:  # Lấy thông tin endpoint từ ValidatorInfo
         if peer_info.uid == self_uid:
             continue  # Bỏ qua chính mình
-        if peer_info.api_endpoint:
+        # Use decoded endpoint for proper URL format
+        endpoint = getattr(peer_info, 'api_endpoint_decoded', peer_info.api_endpoint)
+        if endpoint:
             peer_endpoints[peer_info.uid] = (
-                f"{peer_info.api_endpoint.rstrip('/')}/submit_scores"
+                f"{endpoint.rstrip('/')}/submit_scores"
             )
         else:
             logger.warning(

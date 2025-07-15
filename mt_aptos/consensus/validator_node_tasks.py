@@ -282,9 +282,10 @@ class ValidatorNodeTasks:
                 self.core.tasks_sent[task_id] = assignment
                 tasks_sent_successfully[task_id] = assignment
                 
-                # Prepare async send
+                # Prepare async send - use decoded endpoint
+                endpoint = getattr(miner_info, 'api_endpoint_decoded', miner_info.api_endpoint)
                 send_coroutines.append(
-                    self._send_task_via_network_async(miner_info.api_endpoint, task)
+                    self._send_task_via_network_async(endpoint, task)
                 )
                 
             except Exception as e:
@@ -474,7 +475,9 @@ class ValidatorNodeTasks:
         Returns:
             True if successful, False otherwise
         """
-        success = await self._send_task_via_network_async(miner.api_endpoint, task)
+        # Use decoded endpoint for proper URL format
+        endpoint = getattr(miner, 'api_endpoint_decoded', miner.api_endpoint)
+        success = await self._send_task_via_network_async(endpoint, task)
         
         if not success:
             # Clean up on failure

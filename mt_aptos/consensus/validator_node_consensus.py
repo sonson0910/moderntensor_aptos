@@ -20,11 +20,12 @@ from typing import Dict, List, Optional, Any
 import httpx
 from aptos_sdk.async_client import EntryFunction, AccountAddress
 from aptos_sdk.bcs import Serializer
+from aptos_sdk.transactions import TransactionPayload
 
 from ..core.datatypes import ValidatorScore, MinerResult, ValidatorInfo
 from ..formulas.incentive import calculate_miner_incentive
 from ..formulas.performance import calculate_adjusted_miner_performance
-from ..formulas.trust_score import update_trust_score
+
 from .scoring import score_results_logic, broadcast_scores_logic
 from .slot_coordinator import SlotPhase
 
@@ -392,11 +393,8 @@ class ValidatorNodeConsensus:
                     
                     # Update trust score using exponential moving average
                     old_trust_score = getattr(miner_info, 'trust_score', 0.5)
-                    new_trust_score = update_trust_score(
-                        old_trust_score, 
-                        consensus_score, 
-                        alpha
-                    )
+                    # Simple exponential moving average: new = alpha * consensus + (1-alpha) * old
+                    new_trust_score = alpha * consensus_score + (1 - alpha) * old_trust_score
                     
                     miner_info.trust_score = new_trust_score
                     
@@ -584,7 +582,7 @@ class ValidatorNodeConsensus:
     # === Blockchain Submission Methods ===
     
     async def cardano_submit_consensus_to_blockchain(self, final_scores: Dict[str, float]):
-        """Submit consensus results to Aptos blockchain"""
+        """Submit consensus results to Aptos blockchain using individual updates"""
         logger.info(f"🔗 {self.uid_prefix} Submitting {len(final_scores)} consensus scores to blockchain...")
         
         # 🔍 DEBUG: Add detailed logging
@@ -592,8 +590,9 @@ class ValidatorNodeConsensus:
         logger.info(f"🔍 {self.uid_prefix} DEBUG: miners_info count = {len(self.core.miners_info) if self.core.miners_info else 0}")
         logger.info(f"🔍 {self.uid_prefix} DEBUG: contract_address = {self.core.contract_address}")
         
-        # REMOVED: Skip check for empty final_scores - now we always process
-        # Even 0 scores are important for updating miner performance
+        if not final_scores:
+            logger.info(f"📝 {self.uid_prefix} No scores to submit")
+            return
         
         # Check if we have the necessary components
         if not hasattr(self.core, 'client') or not self.core.client:
@@ -609,12 +608,12 @@ class ValidatorNodeConsensus:
             return
         
         try:
-            from aptos_sdk.transactions import EntryFunction, TransactionArgument, TransactionPayload
+            from aptos_sdk.transactions import EntryFunction, TransactionPayload, TransactionArgument
             from aptos_sdk.bcs import Serializer
+            from aptos_sdk.account_address import AccountAddress
             
-            # Submit each miner's final score to blockchain
-            transaction_hashes = []
-            
+            # Process each miner individually for better error handling
+            successful_updates = 0
             for miner_uid, consensus_score in final_scores.items():
                 try:
                     # Find miner address from uid
@@ -636,51 +635,21 @@ class ValidatorNodeConsensus:
                     trust_score_scaled = int(consensus_score * 100_000_000)
                     performance_scaled = int(consensus_score * 100_000_000)
                     
-                    # Create transaction payload with correct module name and address format
-                    from aptos_sdk.account_address import AccountAddress
-                    from aptos_sdk.transactions import ModuleId
-                    from aptos_sdk.bcs import Serializer
+                    logger.info(f"📊 {self.uid_prefix} Updating miner {miner_uid} (score: {consensus_score:.3f})")
                     
-                    # Serialization functions
-                    def serialize_address(addr_str: str) -> bytes:
-                        """Serialize address"""
-                        serializer = Serializer()
-                        serializer.struct(AccountAddress.from_str(addr_str))
-                        return serializer.output()
-                        
-                    def serialize_u64(value: int) -> bytes:
-                        """Serialize u64"""
-                        serializer = Serializer()
-                        serializer.u64(value)
-                        return serializer.output()
-                        
-                    def serialize_string(value: str) -> bytes:
-                        """Serialize string"""
-                        serializer = Serializer()
-                        serializer.str(value)
-                        return serializer.output()
-                    
-                    # Create module ID
-                    module_id = ModuleId(
-                        AccountAddress.from_str(self.core.contract_address),
-                        "full_moderntensor"
-                    )
-                    
-                    # Serialize arguments
-                    args = [
-                        serialize_address(miner_address),  # address
-                        serialize_u64(trust_score_scaled),  # trust score
-                        serialize_u64(performance_scaled),  # performance score
-                        serialize_u64(0),  # rewards
-                        serialize_string(""),  # performance hash
-                        serialize_u64(100_000_000),  # weight
-                    ]
-                    
-                    payload = EntryFunction(
-                        module_id,
+                    # Create payload using proper TransactionArgument serialization
+                    payload = EntryFunction.natural(
+                        f"{self.core.contract_address}::moderntensor",
                         "update_miner_performance",
-                        [],  # No type arguments
-                        args
+                        [],  # Type args
+                        [
+                            TransactionArgument(AccountAddress.from_str(miner_address), Serializer.struct),
+                            TransactionArgument(trust_score_scaled, Serializer.u64),
+                            TransactionArgument(performance_scaled, Serializer.u64),
+                            TransactionArgument(0, Serializer.u64),  # rewards
+                            TransactionArgument("", Serializer.str),  # performance_hash
+                            TransactionArgument(100_000_000, Serializer.u64),  # weight
+                        ]
                     )
                     
                     # Submit transaction
@@ -692,14 +661,14 @@ class ValidatorNodeConsensus:
                     # Wait for confirmation
                     await self.core.client.wait_for_transaction(tx_hash)
                     
-                    transaction_hashes.append(tx_hash)
-                    logger.info(f"✅ {self.uid_prefix} Submitted score for {miner_uid}: {consensus_score:.4f} → TX: {tx_hash}")
+                    logger.info(f"✅ {self.uid_prefix} Updated miner {miner_uid} successfully - TX: {tx_hash}")
+                    successful_updates += 1
                     
                 except Exception as e:
-                    logger.error(f"❌ {self.uid_prefix} Failed to submit score for {miner_uid}: {e}")
+                    logger.error(f"❌ {self.uid_prefix} Failed to update miner {miner_uid}: {e}")
                     continue
             
-            logger.info(f"🎯 {self.uid_prefix} Blockchain submission complete: {len(transaction_hashes)}/{len(final_scores)} transactions submitted")
+            logger.info(f"🎯 {self.uid_prefix} Blockchain submission completed: {successful_updates}/{len(final_scores)} miners updated")
             
         except Exception as e:
             logger.error(f"❌ {self.uid_prefix} Blockchain submission error: {e}")

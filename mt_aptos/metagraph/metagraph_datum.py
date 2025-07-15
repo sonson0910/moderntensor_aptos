@@ -1,7 +1,7 @@
 # sdk/metagraph/metagraph_datum.py
 """
 Định nghĩa cấu trúc dữ liệu cho các thành phần trong Metagraph (Miner, Validator, Subnet)
-cho Aptos blockchain.
+cho Aptos blockchain - Updated to match deployed contract structure.
 """
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
@@ -9,13 +9,12 @@ from typing import Optional, List, Dict, Any
 # --- Import settings để lấy divisor ---
 try:
     from mt_aptos.config.settings import settings
-
     DATUM_INT_DIVISOR = settings.METAGRAPH_DATUM_INT_DIVISOR
 except ImportError:
     print(
-        "Warning: Could not import settings for DATUM_INT_DIVISOR. Using default 1_000_000.0"
+        "Warning: Could not import settings for DATUM_INT_DIVISOR. Using default 100_000_000.0"
     )
-    DATUM_INT_DIVISOR = 1_000_000.0
+    DATUM_INT_DIVISOR = 100_000_000.0  # Updated to match contract scale (1e8)
 
 # --- Định nghĩa các hằng số trạng thái ---
 STATUS_INACTIVE = 0  # Chưa đăng ký hoặc đã hủy đăng ký
@@ -25,138 +24,201 @@ STATUS_JAILED = 2  # Bị phạt, tạm khóa hoạt động
 
 @dataclass
 class MinerData:
-    """Lưu trữ trạng thái của một Miner trên blockchain."""
+    """Lưu trữ trạng thái của một Miner trên blockchain - Updated structure."""
 
     uid: str  # hexadecimal string
     subnet_uid: int
     stake: int
-    scaled_last_performance: int  # Đã scale (x DIVISOR)
-    scaled_trust_score: int  # Đã scale (x DIVISOR)
+    last_performance: int  # Raw value from contract (scaled by 1e8)
+    trust_score: int  # Raw value from contract (scaled by 1e8)
     accumulated_rewards: int
     last_update_time: int  # Timestamp cuối cùng dữ liệu này được cập nhật
     performance_history_hash: str  # hexadecimal string
     wallet_addr_hash: str  # hexadecimal string
     status: int  # 0: Inactive, 1: Active, 2: Jailed
     registration_time: int
-    api_endpoint: str
+    api_endpoint: str  # hexadecimal string in contract
+    weight: int  # Raw value from contract (scaled by 1e8)
+    miner_address: str  # Address của miner
 
     @property
-    def trust_score(self) -> float:
+    def trust_score_float(self) -> float:
         """Trả về trust score dạng float."""
-        return (
-            self.scaled_trust_score / DATUM_INT_DIVISOR
-        )  # Sử dụng divisor từ settings
+        return self.trust_score / DATUM_INT_DIVISOR
 
     @property
-    def last_performance(self) -> float:
+    def last_performance_float(self) -> float:
         """Trả về performance dạng float."""
-        return (
-            self.scaled_last_performance / DATUM_INT_DIVISOR
-        )  # Sử dụng divisor từ settings
+        return self.last_performance / DATUM_INT_DIVISOR
+
+    @property
+    def weight_float(self) -> float:
+        """Trả về weight dạng float."""
+        return self.weight / DATUM_INT_DIVISOR
+
+    @property
+    def api_endpoint_decoded(self) -> str:
+        """Decode hex api_endpoint to string."""
+        try:
+            if self.api_endpoint.startswith('0x'):
+                hex_str = self.api_endpoint[2:]
+                return bytes.fromhex(hex_str).decode('utf-8')
+            return self.api_endpoint
+        except:
+            return self.api_endpoint
+
+    @property
+    def uid_decoded(self) -> str:
+        """Decode hex uid to string."""
+        try:
+            if self.uid.startswith('0x'):
+                hex_str = self.uid[2:]
+                return bytes.fromhex(hex_str).decode('utf-8')
+            return self.uid
+        except:
+            return self.uid
 
 
 @dataclass
 class ValidatorData:
-    """Lưu trữ trạng thái của một Validator trên blockchain."""
+    """Lưu trữ trạng thái của một Validator trên blockchain - Updated structure."""
 
     uid: str  # hexadecimal string
     subnet_uid: int
     stake: int
-    scaled_last_performance: int  # Đã scale (x DIVISOR)
-    scaled_trust_score: int  # Đã scale (x DIVISOR)
+    last_performance: int  # Raw value from contract (scaled by 1e8)
+    trust_score: int  # Raw value from contract (scaled by 1e8)
     accumulated_rewards: int
     last_update_time: int
     performance_history_hash: str  # hexadecimal string
     wallet_addr_hash: str  # hexadecimal string
     status: int  # 0: Inactive, 1: Active, 2: Jailed
     registration_time: int
-    api_endpoint: str
+    api_endpoint: str  # hexadecimal string in contract
+    weight: int  # Raw value from contract (scaled by 1e8)
+    validator_address: str  # Address của validator
 
     @property
-    def trust_score(self) -> float:
+    def trust_score_float(self) -> float:
         """Trả về trust score dạng float."""
-        return (
-            self.scaled_trust_score / DATUM_INT_DIVISOR
-        )  # Sử dụng divisor từ settings
+        return self.trust_score / DATUM_INT_DIVISOR
 
     @property
-    def last_performance(self) -> float:
+    def last_performance_float(self) -> float:
         """Trả về performance dạng float."""
-        return (
-            self.scaled_last_performance / DATUM_INT_DIVISOR
-        )  # Sử dụng divisor từ settings
-
-
-@dataclass
-class SubnetStaticData:
-    """Lưu trữ thông tin tĩnh, ít thay đổi của một Subnet."""
-
-    net_uid: int
-    name: str
-    owner_addr: str
-    max_miners: int
-    max_validators: int
-    immunity_period: int
-    creation_time: int
-    description: str
-    version: int
-    min_stake_miner: int
-    min_stake_validator: int
-
-
-@dataclass
-class SubnetDynamicData:
-    """Lưu trữ thông tin động, thường xuyên thay đổi của một Subnet."""
-
-    net_uid: int
-    scaled_weight: int  # Đã scale (x DIVISOR)
-    scaled_performance: int  # Đã scale (x DIVISOR)
-    current_epoch: int
-    registration_open: int
-    reg_cost: int
-    scaled_incentive_ratio: int  # Đã scale (x DIVISOR)
-    last_update_time: int
-    total_stake: int
-    validator_count: int
-    miner_count: int
+        return self.last_performance / DATUM_INT_DIVISOR
 
     @property
-    def weight(self) -> float:
+    def weight_float(self) -> float:
         """Trả về weight dạng float."""
-        return (
-            self.scaled_weight / DATUM_INT_DIVISOR
-        )  # Sử dụng divisor từ settings
+        return self.weight / DATUM_INT_DIVISOR
 
     @property
-    def performance(self) -> float:
-        """Trả về performance dạng float."""
-        return (
-            self.scaled_performance / DATUM_INT_DIVISOR
-        )  # Sử dụng divisor từ settings
+    def api_endpoint_decoded(self) -> str:
+        """Decode hex api_endpoint to string."""
+        try:
+            if self.api_endpoint.startswith('0x'):
+                hex_str = self.api_endpoint[2:]
+                return bytes.fromhex(hex_str).decode('utf-8')
+            return self.api_endpoint
+        except:
+            return self.api_endpoint
+
+    @property
+    def uid_decoded(self) -> str:
+        """Decode hex uid to string."""
+        try:
+            if self.uid.startswith('0x'):
+                hex_str = self.uid[2:]
+                return bytes.fromhex(hex_str).decode('utf-8')
+            return self.uid
+        except:
+            return self.uid
+
+
+@dataclass
+class NetworkStats:
+    """Network statistics từ contract."""
+    total_validators: int
+    total_miners: int  
+    total_stake: int
+    last_update: int
+
 
 # Helper functions to convert between data objects and Move resources
-def from_move_resource(resource_data: Dict[str, Any], data_class: type) -> Any:
+def from_move_validator_resource(resource_data: Dict[str, Any]) -> ValidatorData:
     """
-    Convert a Move resource dictionary to a Python data class instance.
+    Convert Move ValidatorInfo resource to ValidatorData.
     
     Args:
-        resource_data: Dictionary containing the Move resource fields
-        data_class: The target Python data class type
+        resource_data: Dictionary từ contract response
         
     Returns:
-        An instance of the specified data class
+        ValidatorData instance
     """
-    # Create a dictionary of parameters for the data class constructor
-    params = {}
+    return ValidatorData(
+        uid=resource_data.get('uid', ''),
+        subnet_uid=int(resource_data.get('subnet_uid', 0)),
+        stake=int(resource_data.get('stake', 0)),
+        last_performance=int(resource_data.get('last_performance', 0)),
+        trust_score=int(resource_data.get('trust_score', 0)),
+        accumulated_rewards=int(resource_data.get('accumulated_rewards', 0)),
+        last_update_time=int(resource_data.get('last_update_time', 0)),
+        performance_history_hash=resource_data.get('performance_history_hash', ''),
+        wallet_addr_hash=resource_data.get('wallet_addr_hash', ''),
+        status=int(resource_data.get('status', 0)),
+        registration_time=int(resource_data.get('registration_time', 0)),
+        api_endpoint=resource_data.get('api_endpoint', ''),
+        weight=int(resource_data.get('weight', 0)),
+        validator_address=resource_data.get('validator_address', '')
+    )
+
+
+def from_move_miner_resource(resource_data: Dict[str, Any]) -> MinerData:
+    """
+    Convert Move MinerInfo resource to MinerData.
     
-    # For each field in the data class, find the corresponding value in the resource data
-    for field_name in data_class.__annotations__:
-        # Handle type conversions as needed
-        if field_name in resource_data:
-            params[field_name] = resource_data[field_name]
+    Args:
+        resource_data: Dictionary từ contract response
+        
+    Returns:
+        MinerData instance
+    """
+    return MinerData(
+        uid=resource_data.get('uid', ''),
+        subnet_uid=int(resource_data.get('subnet_uid', 0)),
+        stake=int(resource_data.get('stake', 0)),
+        last_performance=int(resource_data.get('last_performance', 0)),
+        trust_score=int(resource_data.get('trust_score', 0)),
+        accumulated_rewards=int(resource_data.get('accumulated_rewards', 0)),
+        last_update_time=int(resource_data.get('last_update_time', 0)),
+        performance_history_hash=resource_data.get('performance_history_hash', ''),
+        wallet_addr_hash=resource_data.get('wallet_addr_hash', ''),
+        status=int(resource_data.get('status', 0)),
+        registration_time=int(resource_data.get('registration_time', 0)),
+        api_endpoint=resource_data.get('api_endpoint', ''),
+        weight=int(resource_data.get('weight', 0)),
+        miner_address=resource_data.get('miner_address', '')
+    )
+
+
+def from_move_network_stats(stats_result: List) -> NetworkStats:
+    """
+    Convert network stats result from contract to NetworkStats.
     
-    # Create and return the data class instance
-    return data_class(**params)
+    Args:
+        stats_result: List result from get_network_stats contract call
+        
+    Returns:
+        NetworkStats instance
+    """
+    return NetworkStats(
+        total_validators=int(stats_result[0]),
+        total_miners=int(stats_result[1]),
+        total_stake=int(stats_result[2]),
+        last_update=int(stats_result[3])
+    )
+
 
 def to_move_resource(data_obj: Any) -> Dict[str, Any]:
     """

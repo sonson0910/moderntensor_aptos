@@ -190,38 +190,196 @@ class AptosContractClient:
 
     async def get_all_miners(self) -> Dict[str, MinerInfo]:
         """
-        Get all miners from blockchain - returns from fixed metagraph data
+        Get all miners from blockchain using real smart contract query
         """
         try:
-            logger.info("MOCK: Getting all miners from fixed metagraph data")
+            logger.info("Getting all miners from smart contract...")
             
-            # Use the fixed metagraph data
-            from mt_aptos.metagraph.metagraph_data import get_all_miner_data
+            # Get all miner addresses from smart contract
+            all_miners_response = await self.client.view(
+                f"{self.contract_address}::moderntensor::get_all_miners",
+                [],  # type_arguments
+                []   # arguments
+            )
             
-            # Call the function that actually returns miners
-            miners_dict = await get_all_miner_data(self.client, self.contract_address)
+            # Parse bytes response
+            if isinstance(all_miners_response, bytes):
+                import json
+                response_str = all_miners_response.decode('utf-8')
+                response_json = json.loads(response_str)
+                miner_addresses = response_json[0] if response_json and len(response_json) > 0 else []
+            else:
+                miner_addresses = all_miners_response[0] if all_miners_response and len(all_miners_response) > 0 else []
             
-            logger.info(f"🎯 Found {len(miners_dict)} miners from fixed metagraph")
-            return miners_dict if miners_dict else {}
+            if not miner_addresses:
+                logger.warning("No miners found in smart contract")
+                return {}
+            logger.info(f"Found {len(miner_addresses)} miner addresses in smart contract")
+            
+            miners_info = {}
+            
+            # Get detailed info for each miner
+            for miner_address in miner_addresses:
+                try:
+                    miner_info_response = await self.client.view(
+                        f"{self.contract_address}::moderntensor::get_miner_info",
+                        [],  # type_arguments
+                        [miner_address]  # arguments
+                    )
+                    
+                    # Parse bytes response
+                    if isinstance(miner_info_response, bytes):
+                        import json
+                        response_str = miner_info_response.decode('utf-8')
+                        response_json = json.loads(response_str)
+                        miner_data = response_json[0] if response_json and len(response_json) > 0 else None
+                    else:
+                        miner_data = miner_info_response[0] if miner_info_response and len(miner_info_response) > 0 else None
+                    
+                    if miner_data:
+                        
+                        # Extract UID from response (it's hex encoded)
+                        uid_hex = miner_data.get('uid', '')
+                        if uid_hex.startswith('0x'):
+                            try:
+                                uid = bytes.fromhex(uid_hex[2:]).decode('utf-8')
+                            except:
+                                uid = f"miner_{miner_address[-8:]}"
+                        else:
+                            uid = f"miner_{miner_address[-8:]}"
+                        
+                        # Decode API endpoint
+                        endpoint_hex = miner_data.get("api_endpoint", "")
+                        try:
+                            if endpoint_hex.startswith('0x'):
+                                api_endpoint_decoded = bytes.fromhex(endpoint_hex[2:]).decode('utf-8')
+                            else:
+                                api_endpoint_decoded = endpoint_hex
+                        except:
+                            api_endpoint_decoded = endpoint_hex
+                        
+                        # Convert to MinerInfo object
+                        miner_info = MinerInfo(
+                            uid=uid,
+                            address=miner_address,
+                            api_endpoint=api_endpoint_decoded,  # Use decoded endpoint
+                            trust_score=int(miner_data.get("trust_score", 0)) / 100_000_000,  # Scale down from 1e8
+                            stake=int(miner_data.get("stake", 0)) / 100_000_000,  # Convert from octas 
+                            status=int(miner_data.get("status", 1)),  # 1 is STATUS_ACTIVE
+                            subnet_uid=int(miner_data.get("subnet_uid", 0)),
+                            registration_time=int(miner_data.get("registration_time", 0)),
+                            weight=int(miner_data.get("weight", 0)) / 100_000_000,  # Scale down from 1e8
+                            performance_history=[],  # Empty for now
+                            wallet_addr_hash=miner_data.get("wallet_addr_hash", ""),
+                            performance_history_hash=miner_data.get("performance_history_hash", "")
+                        )
+                        
+                        miners_info[uid] = miner_info
+                        logger.info(f"✅ Loaded miner: {uid} at {miner_address}")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to get info for miner {miner_address}: {e}")
+                    continue
+            
+            logger.info(f"🎯 Successfully loaded {len(miners_info)} miners from smart contract")
+            return miners_info
+            
         except Exception as e:
             logger.error(f"Failed to get all miners: {e}")
             return {}
 
     async def get_all_validators(self) -> Dict[str, ValidatorInfo]:
         """
-        Get all validators from blockchain - returns from fixed metagraph data
+        Get all validators from blockchain using real smart contract query
         """
         try:
-            logger.info("MOCK: Getting all validators from fixed metagraph data")
+            logger.info("Getting all validators from smart contract...")
             
-            # Use the fixed metagraph data
-            from mt_aptos.metagraph.metagraph_data import get_all_validator_data
+            # Get all validator addresses from smart contract
+            all_validators_response = await self.client.view(
+                f"{self.contract_address}::moderntensor::get_all_validators",
+                [],  # type_arguments
+                []   # arguments
+            )
             
-            # Call the function that actually returns validators
-            validators_dict = await get_all_validator_data(self.client, self.contract_address)
+            # Parse bytes response
+            if isinstance(all_validators_response, bytes):
+                import json
+                response_str = all_validators_response.decode('utf-8')
+                response_json = json.loads(response_str)
+                validator_addresses = response_json[0] if response_json and len(response_json) > 0 else []
+            else:
+                validator_addresses = all_validators_response[0] if all_validators_response and len(all_validators_response) > 0 else []
             
-            logger.info(f"🎯 Found {len(validators_dict)} validators from fixed metagraph")
-            return validators_dict if validators_dict else {}
+            if not validator_addresses:
+                logger.warning("No validators found in smart contract")
+                return {}
+            logger.info(f"Found {len(validator_addresses)} validator addresses in smart contract")
+            
+            validators_info = {}
+            
+            # Get detailed info for each validator
+            for validator_address in validator_addresses:
+                try:
+                    validator_info_response = await self.client.view(
+                        f"{self.contract_address}::moderntensor::get_validator_info",
+                        [],  # type_arguments
+                        [validator_address]  # arguments
+                    )
+                    
+                    # Parse bytes response
+                    if isinstance(validator_info_response, bytes):
+                        import json
+                        response_str = validator_info_response.decode('utf-8')
+                        response_json = json.loads(response_str)
+                        validator_data = response_json[0] if response_json and len(response_json) > 0 else None
+                    else:
+                        validator_data = validator_info_response[0] if validator_info_response and len(validator_info_response) > 0 else None
+                    
+                    if validator_data:
+                        # Extract UID from response (it's hex encoded)
+                        uid_hex = validator_data.get('uid', '')
+                        if uid_hex.startswith('0x'):
+                            try:
+                                uid = bytes.fromhex(uid_hex[2:]).decode('utf-8')
+                            except:
+                                uid = f"validator_{validator_address[-8:]}"
+                        else:
+                            uid = f"validator_{validator_address[-8:]}"
+                        
+                        # Decode API endpoint  
+                        endpoint_hex = validator_data.get("api_endpoint", "")
+                        try:
+                            if endpoint_hex.startswith('0x'):
+                                api_endpoint_decoded = bytes.fromhex(endpoint_hex[2:]).decode('utf-8')
+                            else:
+                                api_endpoint_decoded = endpoint_hex
+                        except:
+                            api_endpoint_decoded = endpoint_hex
+                        
+                        # Convert to ValidatorInfo object
+                        validator_info = ValidatorInfo(
+                            uid=uid,
+                            address=validator_address,
+                            api_endpoint=api_endpoint_decoded,  # Use decoded endpoint
+                            trust_score=int(validator_data.get("trust_score", 0)) / 100_000_000,  # Scale down from 1e8
+                            stake=int(validator_data.get("stake", 0)) / 100_000_000,  # Convert from octas 
+                            status=int(validator_data.get("status", 1)),  # 1 is STATUS_ACTIVE
+                            subnet_uid=int(validator_data.get("subnet_uid", 0)),
+                            registration_time=int(validator_data.get("registration_time", 0)),
+                            weight=int(validator_data.get("weight", 0)) / 100_000_000,  # Scale down from 1e8
+                            last_performance=int(validator_data.get("last_performance", 0)) / 100_000_000
+                        )
+                        
+                        validators_info[uid] = validator_info
+                        logger.info(f"✅ Loaded validator: {uid} at {validator_address}")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to get info for validator {validator_address}: {e}")
+                    continue
+            
+            logger.info(f"🎯 Successfully loaded {len(validators_info)} validators from smart contract")
+            return validators_info
             
         except Exception as e:
             logger.error(f"Failed to get all validators: {e}")

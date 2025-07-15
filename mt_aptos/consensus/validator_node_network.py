@@ -371,12 +371,14 @@ class ValidatorNodeNetwork:
         Returns:
             True if successful, False otherwise
         """
-        if not target_validator.api_endpoint:
+        # Use decoded endpoint for proper URL format
+        validator_endpoint = getattr(target_validator, 'api_endpoint_decoded', target_validator.api_endpoint)
+        if not validator_endpoint:
             logger.warning(f"{self.uid_prefix} No API endpoint for validator {target_validator.uid}")
             return False
         
         try:
-            url = f"{target_validator.api_endpoint.rstrip('/')}/{endpoint.lstrip('/')}"
+            url = f"{validator_endpoint.rstrip('/')}/{endpoint.lstrip('/')}"
             
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
                 response = await client.post(

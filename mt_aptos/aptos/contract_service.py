@@ -2,6 +2,7 @@
 Aptos contract service functions for ModernTensor.
 
 This module provides functions to interact with Move contracts on Aptos.
+Updated to include ModernTensor contract helpers.
 """
 
 from typing import Dict, Any, List, Optional
@@ -14,6 +15,10 @@ from ..transactions import (
 )
 
 from ..config.settings import settings, logger
+
+# ModernTensor contract constants
+MODERNTENSOR_CONTRACT_ADDRESS = "0x9ba2d796ed64ea00a4f7690be844174820e0729de9f37fcaae429bc15ac37c04"
+MODERNTENSOR_MODULE_NAME = "moderntensor"
 
 
 async def execute_entry_function(

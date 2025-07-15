@@ -36,7 +36,7 @@ The system is implemented using Move smart contracts and automated using Node.js
   - **15% (150M MTNSR)**: Treasury DAO (vested over 10 years, linear unlock)
   - **10% (100M MTNSR)**: Public sale and liquidity (50% unlocked immediately, 50% vested over 1 year)
 - **Reward Mechanism**:
-  - **Emission**: Rewards are emitted from the community pool (50%) into a Reward Pool each epoch (30 days) using a halving algorithm (base reward halves every 24 epochs, ~2 years).
+  - **Emission**: Rewards are emitted from the community pool (50%) into a Reward Pool each epoch (5 days) using a halving algorithm (base reward halves every 60 epochs, ~4 years).
   - **Distribution**: Rewards are allocated as follows:
     - Subnets: 20% of total rewards
     - Validators: 40% of total rewards

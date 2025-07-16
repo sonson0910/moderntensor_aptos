@@ -47,7 +47,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "aptosctl=mt_aptos.cli.main:aptosctl",
+            "aptosctl=moderntensor.mt_aptos.cli.main:aptosctl",
         ],
     },
     author="ModernTensor",

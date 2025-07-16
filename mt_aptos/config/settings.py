@@ -627,24 +627,31 @@ class Settings(BaseSettings):
         # Try legacy setting first, then default to validator 1
         return self.VALIDATOR_API_ENDPOINT or self.VALIDATOR_1_API_ENDPOINT
 
-    # Giữ nguyên validator của bạn
+    # Network validator fixed for CLI compatibility
     @field_validator("APTOS_NETWORK", mode="before")
     def validate_network(cls, value: Optional[str]):
         if value is None:
-            return "https://testnet.aptoslabs.com/v1"
+            return "testnet"
         
         value_str = str(value).strip()
         
-        # If already full URL, keep it
+        # If it's a URL, extract the network name
         if value_str.startswith("http://") or value_str.startswith("https://"):
-            return value_str
+            if "mainnet" in value_str:
+                return "mainnet"
+            elif "devnet" in value_str:
+                return "devnet"
+            elif "localhost" in value_str or "127.0.0.1" in value_str:
+                return "local"
+            else:
+                return "testnet"
         
-        # Otherwise convert network name to full URL
+        # Otherwise validate network name
         normalized = value_str.lower()
-        if normalized == "mainnet":
-            return "https://mainnet.aptoslabs.com/v1"
-        else:  # Default to testnet
-            return "https://testnet.aptoslabs.com/v1"
+        if normalized in ["mainnet", "testnet", "devnet", "local"]:
+            return normalized
+        else:
+            return "testnet"  # Default to testnet
 
 
 # --- Tạo một instance để sử dụng trong toàn bộ ứng dụng ---

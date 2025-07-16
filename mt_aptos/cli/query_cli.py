@@ -12,9 +12,10 @@ from typing import Dict, Any, List, Optional
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich import box
 
 # Remove pycardano imports
-from moderntensor.mt_aptos.async_client import RestClient
+from aptos_sdk.async_client import RestClient
 from moderntensor.mt_aptos.account import AccountAddress
 
 from moderntensor.mt_aptos.config.settings import settings, logger
@@ -358,7 +359,8 @@ def query_subnet_cmd(subnet_id, contract_address, node_url, network):
     """
     🌐 Query information about a ModernTensor subnet.
     
-    Shows subnet details, parameters, and statistics.
+    Shows subnet details by querying validators and miners for the subnet.
+    Note: This uses available contract functions since subnet-specific queries aren't available.
     """
     console = Console()
     console.print(f"⏳ Querying subnet ID [yellow]{subnet_id}[/yellow]...")
@@ -366,93 +368,201 @@ def query_subnet_cmd(subnet_id, contract_address, node_url, network):
     async def query_subnet():
         try:
             # Determine node URL - initialize first
-            node_url = None
-            if not node_url:
+            actual_node_url = node_url
+            if not actual_node_url:
                 if network == "mainnet":
-                    node_url = "https://fullnode.mainnet.aptoslabs.com/v1"
+                    actual_node_url = "https://fullnode.mainnet.aptoslabs.com/v1"
                 elif network == "testnet":
-                    node_url = "https://fullnode.testnet.aptoslabs.com/v1"
+                    actual_node_url = "https://fullnode.testnet.aptoslabs.com/v1"
                 elif network == "devnet":
-                    node_url = "https://fullnode.devnet.aptoslabs.com/v1"
+                    actual_node_url = "https://fullnode.devnet.aptoslabs.com/v1"
                 else:  # local
-                    node_url = "http://localhost:8080/v1"
+                    actual_node_url = "http://localhost:8080/v1"
             
-            # Create ModernTensor client
-            client = ModernTensorClient(
-                contract_address=contract_address,
-                node_url=node_url,
-                network=network
-            )
+            # Create REST client
+            rest_client = RestClient(actual_node_url)
             
-            # Get subnet information
-            subnet_info = await client.get_subnet(subnet_id)
+            # Note: The deployed contract doesn't have subnet-specific query functions
+            # We can only get network-wide statistics and validator/miner info
+            console.print(f"⚠️  [yellow]Note:[/yellow] The deployed contract doesn't have subnet-specific query functions.")
+            console.print(f"📊 Showing network-wide statistics instead...")
             
-            if not subnet_info:
-                console.print(f"❌ [bold red]Error:[/bold red] Subnet {subnet_id} not found")
+            try:
+                # First try to get specific subnet info
+                subnet_result = None
+                try:
+                    subnet_result = await rest_client.view(
+                        f"{contract_address or settings.APTOS_CONTRACT_ADDRESS}::moderntensor::get_subnet_info",
+                        [],  # Type arguments
+                        [subnet_id]   # Function arguments - subnet_uid
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not get subnet-specific info: {e}")
+                
+                if subnet_result and len(subnet_result) > 0:
+                    # Parse subnet-specific data
+                    subnet_info = subnet_result[0] if isinstance(subnet_result[0], dict) else subnet_result
+                    
+                    # Create subnet info table with specific data
+                    table = Table(
+                        title=f"🌐 Subnet {subnet_id} Information",
+                        box=box.ROUNDED,
+                        header_style="bold cyan"
+                    )
+                    table.add_column("Property", style="cyan", no_wrap=True)
+                    table.add_column("Value", style="green")
+                    
+                    # Add subnet-specific info
+                    if isinstance(subnet_info, dict):
+                        table.add_row("Subnet UID", str(subnet_info.get("subnet_uid", subnet_id)))
+                        table.add_row("Name", str(subnet_info.get("name", "N/A")))
+                        table.add_row("Description", str(subnet_info.get("description", "N/A")))
+                        table.add_row("Validator Count", str(subnet_info.get("validator_count", "N/A")))
+                        table.add_row("Miner Count", str(subnet_info.get("miner_count", "N/A")))
+                        table.add_row("Max Validators", str(subnet_info.get("max_validators", "N/A")))
+                        table.add_row("Max Miners", str(subnet_info.get("max_miners", "N/A")))
+                        table.add_row("Total Stake", f"{int(subnet_info.get('total_stake', 0)) / 10**8:.8f} APT")
+                        table.add_row("Is Active", "✅ Yes" if subnet_info.get("is_active", False) else "❌ No")
+                        table.add_row("Permits Required", "✅ Yes" if subnet_info.get("validator_permits_required", False) else "❌ No")
+                    else:
+                        table.add_row("Subnet ID", str(subnet_id))
+                        table.add_row("Status", "✅ Subnet exists")
+                    
+                    console.print(table)
+                    
+                else:
+                    # Fall back to network-wide stats
+                    console.print(f"⚠️  [yellow]Note:[/yellow] Subnet {subnet_id} not found. Showing network-wide statistics...")
+                    
+                    network_result = await rest_client.view(
+                        f"{contract_address or settings.APTOS_CONTRACT_ADDRESS}::moderntensor::get_network_stats",
+                        [],  # Type arguments
+                        []   # Function arguments
+                    )
+                    
+                    # Handle bytes response by parsing JSON if needed
+                    if isinstance(network_result, bytes):
+                        import json
+                        network_result = json.loads(network_result.decode('utf-8'))
+                    
+                    if network_result and len(network_result) >= 3:
+                        # Parse network stats (total_validators, total_miners, total_stake)
+                        total_validators = network_result[0]
+                        total_miners = network_result[1] 
+                        total_stake = network_result[2]
+                        
+                        # Create network info table
+                        table = Table(
+                            title=f"📊 Network Statistics (Subnet {subnet_id} not found)",
+                            box=box.ROUNDED,
+                            header_style="bold cyan"
+                        )
+                        table.add_column("Property", style="cyan", no_wrap=True)
+                        table.add_column("Value", style="green")
+                        
+                        # Add rows with network data
+                        table.add_row("Requested Subnet ID", str(subnet_id))
+                        table.add_row("Total Validators", str(total_validators))
+                        table.add_row("Total Miners", str(total_miners))
+                        table.add_row("Total Stake", f"{int(total_stake) / 10**8:.8f} APT")
+                        
+                        console.print(table)
+                    else:
+                        console.print(f"❌ [bold red]Error:[/bold red] Could not get network statistics")
+                        return
+                
+                # Try to get validators and miners for this subnet
+                try:
+                    validators_result = await rest_client.view(
+                        f"{contract_address or settings.APTOS_CONTRACT_ADDRESS}::moderntensor::get_validators_by_subnet_paginated",
+                        [],  # Type arguments
+                        [subnet_id, 0, 10]   # subnet_uid, start, limit
+                    )
+                    
+                    if validators_result and len(validators_result) > 0 and len(validators_result[0]) > 0:
+                        console.print(f"\n🏛️ Found {len(validators_result[0])} validators in subnet {subnet_id}")
+                        
+                        # Show first few validators
+                        validator_table = Table(title=f"Validators in Subnet {subnet_id} (first 10)")
+                        validator_table.add_column("Address", style="cyan")
+                        validator_table.add_column("Stake (APT)", style="yellow")
+                        validator_table.add_column("Trust Score", style="blue")
+                        validator_table.add_column("Status", style="magenta")
+                        
+                        for validator in validators_result[0][:5]:  # Show first 5
+                            address = str(validator.get("validator_address", "N/A"))
+                            stake = validator.get("stake", 0)
+                            trust_score = validator.get("trust_score", 0)
+                            status = validator.get("status", 0)
+                            
+                            stake_apt = stake / 100_000_000 if isinstance(stake, int) else 0
+                            status_str = {0: "Inactive", 1: "Active", 2: "Jailed", 3: "Slashed"}.get(status, "Unknown")
+                            
+                            validator_table.add_row(
+                                address[:16] + "..." if len(address) > 16 else address,
+                                f"{stake_apt:.4f}",
+                                str(trust_score),
+                                status_str
+                            )
+                        
+                        console.print(validator_table)
+                    else:
+                        console.print(f"\n📭 No validators found in subnet {subnet_id}")
+                        
+                except Exception as e:
+                    logger.debug(f"Could not get validators for subnet: {e}")
+                
+                try:
+                    miners_result = await rest_client.view(
+                        f"{contract_address or settings.APTOS_CONTRACT_ADDRESS}::moderntensor::get_miners_by_subnet_paginated",
+                        [],  # Type arguments
+                        [subnet_id, 0, 10]   # subnet_uid, start, limit
+                    )
+                    
+                    if miners_result and len(miners_result) > 0 and len(miners_result[0]) > 0:
+                        console.print(f"\n⛏️ Found {len(miners_result[0])} miners in subnet {subnet_id}")
+                        
+                        # Show first few miners
+                        miner_table = Table(title=f"Miners in Subnet {subnet_id} (first 10)")
+                        miner_table.add_column("Address", style="cyan")
+                        miner_table.add_column("Stake (APT)", style="yellow")
+                        miner_table.add_column("Trust Score", style="blue")
+                        miner_table.add_column("Status", style="magenta")
+                        
+                        for miner in miners_result[0][:5]:  # Show first 5
+                            address = str(miner.get("miner_address", "N/A"))
+                            stake = miner.get("stake", 0)
+                            trust_score = miner.get("trust_score", 0)
+                            status = miner.get("status", 0)
+                            
+                            stake_apt = stake / 100_000_000 if isinstance(stake, int) else 0
+                            status_str = {0: "Inactive", 1: "Active", 2: "Jailed", 3: "Slashed"}.get(status, "Unknown")
+                            
+                            miner_table.add_row(
+                                address[:16] + "..." if len(address) > 16 else address,
+                                f"{stake_apt:.4f}",
+                                str(trust_score),
+                                status_str
+                            )
+                        
+                        console.print(miner_table)
+                    else:
+                        console.print(f"\n📭 No miners found in subnet {subnet_id}")
+                        
+                except Exception as e:
+                    logger.debug(f"Could not get miners for subnet: {e}")
+                    
+            except Exception as e:
+                logger.error(f"Error querying network stats: {e}")
+                console.print(f"❌ [bold red]Error:[/bold red] Failed to query network: {str(e)}")
                 return
 
-            # Display subnet information
-            console.print(Panel(
-                f"[bold]Subnet ID:[/bold] [yellow]{subnet_id}[/yellow]\n"
-                f"[bold]Name:[/bold] {subnet_info.get('name', 'Unknown')}\n"
-                f"[bold]Owner:[/bold] {subnet_info.get('owner', 'Unknown')}\n"
-                f"[bold]Description:[/bold] {subnet_info.get('description', 'No description')}\n"
-                f"[bold]Miners:[/bold] {subnet_info.get('miner_count', 0)}\n"
-                f"[bold]Validators:[/bold] {subnet_info.get('validator_count', 0)}\n"
-                f"[bold]Status:[/bold] {'Active' if subnet_info.get('active', False) else 'Inactive'}\n"
-                f"[bold]Created:[/bold] {subnet_info.get('created_at', 'Unknown')}\n",
-                title=f"Subnet {subnet_id} Information",
-                expand=False
-            ))
-            
-            # Get miners and validators in subnet if available
-            miners = await client.get_subnet_miners(subnet_id)
-            validators = await client.get_subnet_validators(subnet_id)
-            
-            if miners:
-                miner_table = Table(title="Miners in Subnet")
-                miner_table.add_column("UID", style="cyan")
-                miner_table.add_column("Address", style="blue")
-                miner_table.add_column("Stake", style="green")
-                miner_table.add_column("Trust", style="yellow")
-                
-                for miner in miners[:10]:  # Limit to first 10
-                    miner_table.add_row(
-                        miner.get("uid", "Unknown"),
-                        miner.get("address", "Unknown"),
-                        str(miner.get("stake", 0)),
-                        f"{miner.get('trust_score', 0):.4f}"
-                    )
-                
-                if len(miners) > 10:
-                    console.print(f"[yellow]Note: Showing only 10 of {len(miners)} miners.[/yellow]")
-                
-                console.print(miner_table)
-            
-            if validators:
-                validator_table = Table(title="Validators in Subnet")
-                validator_table.add_column("UID", style="cyan")
-                validator_table.add_column("Address", style="blue")
-                validator_table.add_column("Stake", style="green")
-                validator_table.add_column("Trust", style="yellow")
-                
-                for validator in validators[:10]:  # Limit to first 10
-                    validator_table.add_row(
-                        validator.get("uid", "Unknown"),
-                        validator.get("address", "Unknown"),
-                        str(validator.get("stake", 0)),
-                        f"{validator.get('trust_score', 0):.4f}"
-                    )
-                
-                if len(validators) > 10:
-                    console.print(f"[yellow]Note: Showing only 10 of {len(validators)} validators.[/yellow]")
-                
-                console.print(validator_table)
-
         except Exception as e:
-            console.print(f"❌ [bold red]Error:[/bold red] {e}")
-            logger.exception(e)
-    
+            logger.error(f"Unexpected error: {e}")
+            console.print(f"❌ [bold red]Unexpected error:[/bold red] {str(e)}")
+
+    # Run the async function
+    import asyncio
     asyncio.run(query_subnet())
 
 

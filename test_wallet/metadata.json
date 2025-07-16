@@ -1,0 +1,26 @@
+{
+  "wallet_name": "test_wallet",
+  "created_at": "2025-07-15T21:40:51.312034",
+  "coin_type": 637,
+  "accounts": {
+    "0": {
+      "name": "validator_key",
+      "account_index": 0,
+      "derivation_path": "m/44'/637'/0'/0'/0'",
+      "address": "0xbf89a2875b69cd863f69320a65981fe7299856698ddf07d13eae083a62eca167",
+      "public_key": "0x1a5c52905ded4b01281a48d6b0a8d78fa3fbffb04a45e0d09e1a6c2c4deea618",
+      "created_at": "2025-07-15T21:41:44.889491",
+      "hotkeys": {
+        "miner_key": {
+          "name": "miner_key",
+          "address_index": 1,
+          "derivation_path": "m/44'/637'/0'/0'/1'",
+          "address": "0x5bed9d603b40e82505cb1b78f86b15b5fd72e18f2f8096b24afcd5b41427c279",
+          "public_key": "0xfad5e2a50c166bb6d0c90a700f92332d42fe19e64b231bf78d9304f99e0f28fa",
+          "created_at": "2025-07-15T21:43:00.409116"
+        }
+      }
+    }
+  },
+  "next_account_index": 1
+}

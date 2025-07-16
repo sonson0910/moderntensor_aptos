@@ -69,7 +69,7 @@ homepage = "https://github.com/sonson0910"
 
 # Scripts (entry_points) - replacement for 'console_scripts' in setup.py
 [project.scripts]
-moderntensor = "mt_aptos.runner:main"
+aptosctl = "moderntensor.mt_aptos.cli.main:aptosctl"
 
 [tool.setuptools.packages.find]
 where = ["."]

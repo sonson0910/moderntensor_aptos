@@ -13,6 +13,8 @@ sys.path.append(project_root)
 from .wallet_cli import wallet
 from .contract_cli import contract
 from .hd_wallet_cli import hdwallet
+from .query_cli import query_cli
+from .metagraph_cli import metagraph_cli
 
 @click.group()
 def cli():
@@ -77,6 +79,12 @@ cli.add_command(hdwallet)
 # Add contract and old wallet CLI (for backwards compatibility)
 cli.add_command(contract)
 cli.add_command(wallet)
+
+# Add query commands  
+cli.add_command(query_cli)
+
+# Add metagraph commands
+cli.add_command(metagraph_cli)
 
 # Add migration tools
 cli.add_command(migration)

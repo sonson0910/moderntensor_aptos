@@ -18,7 +18,7 @@ from ..config.settings import settings, logger
 
 # ModernTensor contract constants
 MODERNTENSOR_CONTRACT_ADDRESS = "0x9ba2d796ed64ea00a4f7690be844174820e0729de9f37fcaae429bc15ac37c04"
-MODERNTENSOR_MODULE_NAME = "moderntensor"
+MODERNTENSOR_MODULE_NAME = "moderntensor_contract::moderntensor"  # Updated to full module path
 
 
 async def execute_entry_function(

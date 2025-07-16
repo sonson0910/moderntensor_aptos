@@ -65,7 +65,7 @@ async def stake_tokens(
     # Create transaction payload
     payload = TransactionPayload(
         EntryFunction.natural(
-            f"{contract_address}::moderntensor",
+            f"{contract_address}::moderntensor_contract::moderntensor",
             function_name,
             [],  # Type arguments (empty for this function)
             args
@@ -129,7 +129,7 @@ async def unstake_tokens(
     # Create transaction payload
     payload = TransactionPayload(
         EntryFunction.natural(
-            f"{contract_address}::moderntensor",
+            f"{contract_address}::moderntensor_contract::moderntensor",
             function_name,
             [],  # Type arguments (empty for this function)
             args
@@ -189,7 +189,7 @@ async def claim_rewards(
     # Create transaction payload
     payload = TransactionPayload(
         EntryFunction.natural(
-            f"{contract_address}::moderntensor",
+            f"{contract_address}::moderntensor_contract::moderntensor",
             function_name,
             [],  # Type arguments (empty for this function)
             args

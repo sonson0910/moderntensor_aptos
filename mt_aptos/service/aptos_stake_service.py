@@ -1,11 +1,153 @@
+"""
+Aptos staking service functions for ModernTensor.
+Updated to use new contract function names.
+"""
+
 from typing import Optional, Dict, Any
-from mt_aptos.account import Account
-from mt_aptos.async_client import RestClient
-from mt_aptos.transactions import EntryFunction, TransactionArgument, TransactionPayload
+from ..account import Account
+from ..async_client import RestClient
+from ..transactions import (
+    EntryFunction,
+    TransactionArgument,
+    TransactionPayload
+)
 
-from mt_aptos.config.settings import settings, logger
+from ..config.settings import settings, logger
 
 
+async def add_validator_stake(
+    client: RestClient,
+    account: Account,
+    contract_address: str,
+    amount: int
+) -> str:
+    """Add stake to a validator account"""
+    
+    if not contract_address.startswith("0x"):
+        contract_address = f"0x{contract_address}"
+
+    args = [TransactionArgument(amount, TransactionArgument.U64)]
+
+    payload = TransactionPayload(
+        EntryFunction.natural(
+            f"{contract_address}::moderntensor",
+            "add_validator_stake",
+            [],
+            args
+        )
+    )
+
+    try:
+        logger.info(f"Adding {amount} stake to validator")
+        txn_hash = await client.submit_transaction(account, payload)
+        await client.wait_for_transaction(txn_hash)
+        logger.info(f"Successfully added validator stake. Transaction hash: {txn_hash}")
+        return txn_hash
+    except Exception as e:
+        logger.error(f"Failed to add validator stake: {e}")
+        raise
+
+
+async def add_miner_stake(
+    client: RestClient,
+    account: Account,
+    contract_address: str,
+    amount: int
+) -> str:
+    """Add stake to a miner account"""
+    
+    if not contract_address.startswith("0x"):
+        contract_address = f"0x{contract_address}"
+
+    args = [TransactionArgument(amount, TransactionArgument.U64)]
+
+    payload = TransactionPayload(
+        EntryFunction.natural(
+            f"{contract_address}::moderntensor",
+            "add_miner_stake",
+            [],
+            args
+        )
+    )
+
+    try:
+        logger.info(f"Adding {amount} stake to miner")
+        txn_hash = await client.submit_transaction(account, payload)
+        await client.wait_for_transaction(txn_hash)
+        logger.info(f"Successfully added miner stake. Transaction hash: {txn_hash}")
+        return txn_hash
+    except Exception as e:
+        logger.error(f"Failed to add miner stake: {e}")
+        raise
+
+
+async def withdraw_validator_stake(
+    client: RestClient,
+    account: Account,
+    contract_address: str,
+    amount: int
+) -> str:
+    """Withdraw stake from a validator account"""
+    
+    if not contract_address.startswith("0x"):
+        contract_address = f"0x{contract_address}"
+
+    args = [TransactionArgument(amount, TransactionArgument.U64)]
+
+    payload = TransactionPayload(
+        EntryFunction.natural(
+            f"{contract_address}::moderntensor",
+            "withdraw_validator_stake",
+            [],
+            args
+        )
+    )
+
+    try:
+        logger.info(f"Withdrawing {amount} stake from validator")
+        txn_hash = await client.submit_transaction(account, payload)
+        await client.wait_for_transaction(txn_hash)
+        logger.info(f"Successfully withdrew validator stake. Transaction hash: {txn_hash}")
+        return txn_hash
+    except Exception as e:
+        logger.error(f"Failed to withdraw validator stake: {e}")
+        raise
+
+
+async def withdraw_miner_stake(
+    client: RestClient,
+    account: Account,
+    contract_address: str,
+    amount: int
+) -> str:
+    """Withdraw stake from a miner account"""
+    
+    if not contract_address.startswith("0x"):
+        contract_address = f"0x{contract_address}"
+
+    args = [TransactionArgument(amount, TransactionArgument.U64)]
+
+    payload = TransactionPayload(
+        EntryFunction.natural(
+            f"{contract_address}::moderntensor",
+            "withdraw_miner_stake",
+            [],
+            args
+        )
+    )
+
+    try:
+        logger.info(f"Withdrawing {amount} stake from miner")
+        txn_hash = await client.submit_transaction(account, payload)
+        await client.wait_for_transaction(txn_hash)
+        logger.info(f"Successfully withdrew miner stake. Transaction hash: {txn_hash}")
+        return txn_hash
+    except Exception as e:
+        logger.error(f"Failed to withdraw miner stake: {e}")
+        raise
+
+
+# Legacy function names for backward compatibility
 async def stake_tokens(
     client: RestClient,
     account: Account,
@@ -13,61 +155,8 @@ async def stake_tokens(
     amount: int,
     subnet_uid: Optional[int] = None
 ) -> str:
-    """
-    Stakes tokens in the ModernTensor staking contract.
-
-    Args:
-        client (RestClient): The Aptos REST client
-        account (Account): The account performing the staking
-        contract_address (str): The address of the ModernTensor contract
-        amount (int): Amount of tokens to stake (in smallest unit)
-        subnet_uid (int, optional): The subnet ID to stake in. If None, stakes in the default pool.
-
-    Returns:
-        str: The transaction hash of the staking transaction
-
-    Raises:
-        Exception: If the transaction submission fails
-    """
-    # Format the contract address
-    if not contract_address.startswith("0x"):
-        contract_address = f"0x{contract_address}"
-
-    # Create transaction arguments
-    args = [
-        TransactionArgument(amount, TransactionArgument.U64),
-    ]
-    
-    # Add subnet_uid if provided
-    if subnet_uid is not None:
-        args.append(TransactionArgument(subnet_uid, TransactionArgument.U64))
-
-    # Function name depends on whether subnet_uid is provided
-    function_name = "stake_tokens" if subnet_uid is None else "stake_in_subnet"
-
-    # Create transaction payload
-    payload = TransactionPayload(
-        EntryFunction.natural(
-            f"{contract_address}::moderntensor",
-            function_name,
-            [],  # Type arguments (empty for this function)
-            args
-        )
-    )
-
-    try:
-        # Submit transaction
-        logger.info(f"Submitting {function_name} transaction for account {account.address().hex()}")
-        txn_hash = await client.submit_transaction(account, payload)
-        
-        # Wait for transaction confirmation
-        await client.wait_for_transaction(txn_hash)
-        
-        logger.info(f"Successfully staked {amount} tokens")
-        return txn_hash
-    except Exception as e:
-        logger.error(f"Failed to stake tokens: {e}")
-        raise
+    """Legacy function - redirects to add_validator_stake for backward compatibility"""
+    return await add_validator_stake(client, account, contract_address, amount)
 
 
 async def unstake_tokens(
@@ -77,117 +166,37 @@ async def unstake_tokens(
     amount: int,
     subnet_uid: Optional[int] = None
 ) -> str:
-    """
-    Unstakes tokens from the ModernTensor staking contract.
-
-    Args:
-        client (RestClient): The Aptos REST client
-        account (Account): The account performing the unstaking
-        contract_address (str): The address of the ModernTensor contract
-        amount (int): Amount of tokens to unstake (in smallest unit)
-        subnet_uid (int, optional): The subnet ID to unstake from. If None, unstakes from the default pool.
-
-    Returns:
-        str: The transaction hash of the unstaking transaction
-
-    Raises:
-        Exception: If the transaction submission fails
-    """
-    # Format the contract address
-    if not contract_address.startswith("0x"):
-        contract_address = f"0x{contract_address}"
-
-    # Create transaction arguments
-    args = [
-        TransactionArgument(amount, TransactionArgument.U64),
-    ]
-    
-    # Add subnet_uid if provided
-    if subnet_uid is not None:
-        args.append(TransactionArgument(subnet_uid, TransactionArgument.U64))
-
-    # Function name depends on whether subnet_uid is provided
-    function_name = "unstake_tokens" if subnet_uid is None else "unstake_from_subnet"
-
-    # Create transaction payload
-    payload = TransactionPayload(
-        EntryFunction.natural(
-            f"{contract_address}::moderntensor",
-            function_name,
-            [],  # Type arguments (empty for this function)
-            args
-        )
-    )
-
-    try:
-        # Submit transaction
-        logger.info(f"Submitting {function_name} transaction for account {account.address().hex()}")
-        txn_hash = await client.submit_transaction(account, payload)
-        
-        # Wait for transaction confirmation
-        await client.wait_for_transaction(txn_hash)
-        
-        logger.info(f"Successfully unstaked {amount} tokens")
-        return txn_hash
-    except Exception as e:
-        logger.error(f"Failed to unstake tokens: {e}")
-        raise
+    """Legacy function - redirects to withdraw_validator_stake for backward compatibility"""
+    return await withdraw_validator_stake(client, account, contract_address, amount)
 
 
 async def claim_rewards(
     client: RestClient,
     account: Account,
     contract_address: str,
-    subnet_uid: Optional[int] = None
+    node_type: str = "validator"
 ) -> str:
-    """
-    Claims staking rewards from the ModernTensor staking contract.
-
-    Args:
-        client (RestClient): The Aptos REST client
-        account (Account): The account claiming rewards
-        contract_address (str): The address of the ModernTensor contract
-        subnet_uid (int, optional): The subnet ID to claim rewards from. If None, claims from the default pool.
-
-    Returns:
-        str: The transaction hash of the claim transaction
-
-    Raises:
-        Exception: If the transaction submission fails
-    """
-    # Format the contract address
+    """Claim accumulated rewards"""
+    
     if not contract_address.startswith("0x"):
         contract_address = f"0x{contract_address}"
 
-    # Create transaction arguments
-    args = []
-    
-    # Add subnet_uid if provided
-    if subnet_uid is not None:
-        args.append(TransactionArgument(subnet_uid, TransactionArgument.U64))
+    args = [TransactionArgument(node_type, TransactionArgument.STRING)]
 
-    # Function name depends on whether subnet_uid is provided
-    function_name = "claim_rewards" if subnet_uid is None else "claim_subnet_rewards"
-
-    # Create transaction payload
     payload = TransactionPayload(
         EntryFunction.natural(
             f"{contract_address}::moderntensor",
-            function_name,
-            [],  # Type arguments (empty for this function)
+            "claim_rewards",
+            [],
             args
         )
     )
 
     try:
-        # Submit transaction
-        logger.info(f"Submitting {function_name} transaction for account {account.address().hex()}")
+        logger.info(f"Claiming rewards for {node_type}")
         txn_hash = await client.submit_transaction(account, payload)
-        
-        # Wait for transaction confirmation
         await client.wait_for_transaction(txn_hash)
-        
-        logger.info(f"Successfully claimed rewards")
+        logger.info(f"Successfully claimed rewards. Transaction hash: {txn_hash}")
         return txn_hash
     except Exception as e:
         logger.error(f"Failed to claim rewards: {e}")
@@ -198,68 +207,33 @@ async def get_staking_info(
     client: RestClient,
     account_address: str,
     contract_address: str,
-    subnet_uid: Optional[int] = None
-) -> Dict[str, Any]:
-    """
-    Retrieves staking information for an account.
-
-    Args:
-        client (RestClient): The Aptos REST client
-        account_address (str): The address to query staking info for
-        contract_address (str): The address of the ModernTensor contract
-        subnet_uid (int, optional): The subnet ID to query info for. If None, retrieves info from the default pool.
-
-    Returns:
-        Dict[str, Any]: Staking information including:
-            - staked_amount: Amount of tokens staked
-            - pending_rewards: Pending rewards available for claiming
-            - staking_period: Duration user has been staking
-            - other relevant staking metrics
-    """
-    # Format addresses
+    node_type: str = "validator"
+) -> Optional[Dict[str, Any]]:
+    """Get staking information for an account"""
+    
     if not account_address.startswith("0x"):
         account_address = f"0x{account_address}"
     if not contract_address.startswith("0x"):
         contract_address = f"0x{contract_address}"
 
-    # Determine the resource name based on whether subnet staking is being queried
-    resource_type = (
-        f"{contract_address}::moderntensor::StakeInfo" 
-        if subnet_uid is None else 
-        f"{contract_address}::moderntensor::SubnetStakeInfo"
-    )
-    
     try:
-        # Get the staking resource from the account
-        resource = await client.account_resource(account_address, resource_type)
+        # Use new view function to get stake info
+        result = await client.view(
+            f"{contract_address}::moderntensor",
+            "get_node_stake_info",
+            [account_address, node_type]
+        )
         
-        if not resource or "data" not in resource:
-            logger.warning(f"No staking data found for {account_address}")
+        if result and len(result) >= 4:
             return {
-                "staked_amount": 0,
-                "pending_rewards": 0,
-                "staking_period": 0
+                "stake": result[0],
+                "bond": result[1],
+                "stake_locked_until": result[2],
+                "is_stake_locked": result[3]
             }
-            
-        staking_data = resource["data"]
         
-        # Process and return the data
-        result = {
-            "staked_amount": int(staking_data.get("amount", 0)),
-            "pending_rewards": int(staking_data.get("pending_rewards", 0)),
-            "staking_period": int(staking_data.get("staking_period", 0)),
-            # Include other fields as needed based on the actual data structure
-        }
-        
-        logger.info(f"Retrieved staking info for {account_address}: {result}")
-        return result
+        return None
         
     except Exception as e:
-        logger.error(f"Failed to get staking information: {e}")
-        # Return default values on error
-        return {
-            "staked_amount": 0,
-            "pending_rewards": 0,
-            "staking_period": 0,
-            "error": str(e)
-        } 
+        logger.error(f"Failed to get staking info: {e}")
+        return None

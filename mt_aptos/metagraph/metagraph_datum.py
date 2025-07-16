@@ -207,7 +207,7 @@ def from_move_network_stats(stats_result: List) -> NetworkStats:
     Convert network stats result from contract to NetworkStats.
     
     Args:
-        stats_result: List result from get_network_stats contract call
+        stats_result: List result from get_enhanced_network_stats contract call
         
     Returns:
         NetworkStats instance

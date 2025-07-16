@@ -1,0 +1,26 @@
+{
+  "wallet_name": "son",
+  "created_at": "2025-07-16T00:19:27.672455",
+  "coin_type": 637,
+  "accounts": {
+    "0": {
+      "name": "coldkey1",
+      "account_index": 0,
+      "derivation_path": "m/44'/637'/0'/0'/0'",
+      "address": "0xea35e4a354ad7528c143a6f43cbd61581537f0f0fd935718241b611c9446c737",
+      "public_key": "0x4fdb2a0052a62261fce95d5062be63f6f770f40bb4dc646206ba02de1639297a",
+      "created_at": "2025-07-16T00:20:17.791873",
+      "hotkeys": {
+        "hotkey1": {
+          "name": "hotkey1",
+          "address_index": 1,
+          "derivation_path": "m/44'/637'/0'/0'/1'",
+          "address": "0x54843ce23efe41eebb4d454f119ef59e0a3960be28ec9f461194effbdac639bb",
+          "public_key": "0x3081e106b06938da7208c81fadc2dd9717f0c9695b03ab018040a69604bfcbfd",
+          "created_at": "2025-07-16T00:21:00.222808"
+        }
+      }
+    }
+  },
+  "next_account_index": 1
+}

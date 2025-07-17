@@ -1,0 +1,6 @@
+[submodule "subnet1"]
+	path = subnet1
+	url = https://github.com/sonson0910/subnet1_aptos
+[submodule "full_moderntensor_contract"]
+	path = full_moderntensor_contract
+	url = https://github.com/sonson0910/modern-tensor_aptos_contract

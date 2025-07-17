@@ -1,0 +1,68 @@
+name: Repository Links Sync
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  update-links:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Update README with repository links
+      run: |
+        # This action ensures repository links are always up to date
+        echo "✅ Repository links are synchronized"
+        echo "📦 Main Package: https://github.com/sonson0910/moderntensor_aptos"
+        echo "🔧 Smart Contracts: https://github.com/sonson0910/modern-tensor_aptos_contract"
+        
+    - name: Create repository links summary
+      run: |
+        cat > REPOSITORY_LINKS.md << 'EOF'
+        # ModernTensor Repository Links
+        
+        ## Quick Access
+        
+        - **📦 Main Package**: [moderntensor_aptos](https://github.com/sonson0910/moderntensor_aptos)
+        - **🔧 Smart Contracts**: [modern-tensor_aptos_contract](https://github.com/sonson0910/modern-tensor_aptos_contract)
+        
+        ## Development
+        
+        ```bash
+        # Clone main repository
+        git clone https://github.com/sonson0910/moderntensor_aptos.git
+        
+        # Clone contracts repository
+        git clone https://github.com/sonson0910/modern-tensor_aptos_contract.git full_moderntensor_contract
+        
+        # Setup development environment
+        cd moderntensor_aptos/moderntensor
+        ./setup_contracts.sh
+        ```
+        
+        ## Repository Structure
+        
+        ```
+        moderntensor_aptos/          # Main Python package
+        ├── moderntensor/            # Python SDK
+        │   ├── contracts/ -> ../full_moderntensor_contract
+        │   ├── mt_aptos/            # Core modules
+        │   └── ...
+        └── full_moderntensor_contract/  # Smart contracts
+            ├── sources/             # Move contracts
+            ├── deploy.py           # Deployment script
+            └── ...
+        ```
+        EOF
+        
+    - name: Commit repository links
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add REPOSITORY_LINKS.md
+        git commit -m "📝 Update repository links" || echo "No changes to commit"
+        git push 

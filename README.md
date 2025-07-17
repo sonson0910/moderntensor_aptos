@@ -4,6 +4,12 @@
 
 **ModernTensor Aptos** là phiên bản của ModernTensor được xây dựng trên blockchain Aptos, mang đến một nền tảng huấn luyện mô hình AI phi tập trung với hiệu suất và bảo mật cao. Dự án tận dụng Move - ngôn ngữ lập trình của Aptos để triển khai các smart contract an toàn và hiệu quả.
 
+## 🔗 Related Repositories
+
+- **📦 Main Package**: [moderntensor_aptos](https://github.com/sonson0910/moderntensor_aptos) (this repository)
+- **🔧 Smart Contracts**: [modern-tensor_aptos_contract](https://github.com/sonson0910/modern-tensor_aptos_contract.git) - Move smart contracts for ModernTensor
+- **📚 Documentation**: [ModernTensor Documentation](https://github.com/sonson0910/moderntensor_aptos/tree/main/docs)
+
 ## 📋 Tính năng chính
 
 * **Quản lý tài khoản:** Tạo, lưu trữ và quản lý các tài khoản Aptos an toàn với mã hóa mạnh.
@@ -14,7 +20,7 @@
 
 ## 🔧 Cấu trúc dự án
 
-* `contracts/`: Smart contracts Move của ModernTensor
+* `contracts/`: Smart contracts Move của ModernTensor (linked to [modern-tensor_aptos_contract](https://github.com/sonson0910/modern-tensor_aptos_contract.git))
 * `sdk/`: Bộ công cụ phát triển phần mềm (SDK) Python
   * `aptos_core/`: Thành phần cốt lõi và kiểu dữ liệu
   * `keymanager/`: Quản lý tài khoản và khóa

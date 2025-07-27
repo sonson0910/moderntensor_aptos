@@ -343,6 +343,43 @@ class Settings(BaseSettings):
         alias="CONSENSUS_MINI_BATCH_INTERVAL_SECONDS",
         description="Short delay (seconds) between mini-batch iterations to avoid busy-waiting.",
     )
+    
+    # --- Continuous Task Assignment Configuration ---
+    CONTINUOUS_BATCH_SIZE: int = Field(
+        5,
+        alias="CONTINUOUS_BATCH_SIZE",
+        description="Number of miners to select in each continuous assignment batch.",
+    )
+    CONTINUOUS_BATCH_TIMEOUT: float = Field(
+        30.0,
+        alias="CONTINUOUS_BATCH_TIMEOUT", 
+        description="Timeout in seconds for each batch in continuous assignment.",
+    )
+    CONTINUOUS_MIN_BREAK: float = Field(
+        2.0,
+        alias="CONTINUOUS_MIN_BREAK",
+        description="Minimum break time in seconds between continuous assignment batches.",
+    )
+    CONTINUOUS_SCORE_AGGREGATION: str = Field(
+        "average",
+        alias="CONTINUOUS_SCORE_AGGREGATION",
+        description="Method to aggregate scores across multiple rounds: 'average', 'median', 'max'.",
+    )
+    CONTINUOUS_MAX_CONCURRENT: int = Field(
+        10,
+        alias="CONTINUOUS_MAX_CONCURRENT",
+        description="Maximum number of concurrent tasks to send at once.",
+    )
+    CONTINUOUS_RETRY_FAILED: bool = Field(
+        True,
+        alias="CONTINUOUS_RETRY_FAILED",
+        description="Whether to retry failed task assignments.",
+    )
+    CONTINUOUS_ADAPTIVE_BATCH: bool = Field(
+        True,
+        alias="CONTINUOUS_ADAPTIVE_BATCH",
+        description="Enable adaptive batch sizing based on performance.",
+    )
     # ----
 
     # --- Fraud Detection & Penalty (Validator) ---

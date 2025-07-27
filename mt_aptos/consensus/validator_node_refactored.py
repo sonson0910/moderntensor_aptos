@@ -81,6 +81,12 @@ class ValidatorNode:
         self.consensus = ValidatorNodeConsensus(self.core)
         self.network = ValidatorNodeNetwork(self.core)
         
+        # Initialize continuous assignment
+        self.tasks.initialize_continuous_assignment(self.consensus)
+        
+        # Track running continuous assignments per slot to prevent restarts
+        self.running_assignments: Dict[int, bool] = {}
+        
         # Aliases for backward compatibility
         self.uid_prefix = self.core.uid_prefix
         self.info = self.core.info
@@ -195,7 +201,8 @@ class ValidatorNode:
                 phase, time_in_phase, time_remaining = self.core.get_slot_phase(current_slot)
                 
                 # Skip processing if we already handled this slot for this phase
-                if last_processed_slots[phase] >= current_slot:
+                # Exception: TASK_ASSIGNMENT runs continuously (no skip for continuous assignment)
+                if phase != SlotPhase.TASK_ASSIGNMENT and last_processed_slots[phase] >= current_slot:
                     logger.debug(f"{self.uid_prefix} Slot {current_slot} already processed for phase {phase}, skipping")
                     await asyncio.sleep(5)  # Short sleep to avoid busy waiting
                     continue
@@ -206,7 +213,7 @@ class ValidatorNode:
                 # Handle phase-specific operations
                 if phase == SlotPhase.TASK_ASSIGNMENT:
                     await self._handle_task_assignment_phase(current_slot)
-                    last_processed_slots[phase] = current_slot
+                    # Note: Don't mark as processed - continuous assignment runs throughout the phase
                 elif phase == SlotPhase.TASK_EXECUTION:
                     await self._handle_task_execution_phase(current_slot)
                     last_processed_slots[phase] = current_slot
@@ -234,111 +241,114 @@ class ValidatorNode:
     # === Phase Handlers ===
     
     async def _handle_task_assignment_phase(self, slot: int):
-        """Handle task assignment phase."""
+        """Handle task assignment phase with independent continuous task assignment."""
         logger.debug(f"{self.uid_prefix} Handling task assignment phase for slot {slot}")
         
+        # Check if continuous assignment is already running for this slot
+        if self.running_assignments.get(slot, False):
+            logger.debug(f"⏳ {self.uid_prefix} Continuous assignment already running for slot {slot}, continuing...")
+            return
+        
         try:
-            # Check consensus mode for coordination
-            if self.core.consensus_mode == "flexible":
-                # Flexible mode: Enter task assignment independently
-                await self.core.slot_coordinator.register_phase_entry(slot, SlotPhase.TASK_ASSIGNMENT)
-                logger.info(f"{self.uid_prefix} Entered task assignment phase independently for slot {slot}")
-                
-                # Select and send tasks to miners using minibatch approach
-                selected_miners = self.tasks.cardano_select_miners(slot)
-                
-                if selected_miners:
-                    await self.tasks.cardano_send_minibatches(slot, selected_miners)  # Use minibatch approach
-                    logger.info(f"{self.uid_prefix} Minibatch tasks completed for {len(selected_miners)} miners in slot {slot}")
-                
-            elif self.core.consensus_mode == "synchronized":
-                # Synchronized mode: Wait for all validators
-                await self.core.slot_coordinator.register_phase_entry(slot, SlotPhase.TASK_ASSIGNMENT)
-                
-                # Wait for consensus to proceed
-                await self.core.slot_coordinator.wait_for_phase_consensus(slot, SlotPhase.TASK_ASSIGNMENT)
-                
-                # Select miners for this slot
-                selected_miners = self.tasks.cardano_select_miners(slot)
-                
-                if selected_miners:
-                    # Send tasks to selected miners using minibatch approach
-                    await self.tasks.cardano_send_minibatches(slot, selected_miners)  # Use minibatch approach
-                    logger.info(f"{self.uid_prefix} Minibatch tasks completed for {len(selected_miners)} miners in slot {slot}")
+            # Register phase entry for coordination (but don't wait for others)
+            await self.core.slot_coordinator.register_phase_entry(slot, SlotPhase.TASK_ASSIGNMENT)
+            logger.info(f"🚀 {self.uid_prefix} Starting independent task assignment for slot {slot}")
             
+            # Mark assignment as running for this slot
+            self.running_assignments[slot] = True
+            
+            # Run continuous task assignment immediately - no waiting for other validators
+            # This allows each validator to run at different times, similar to Bittensor
+            logger.info(f"🔄 {self.uid_prefix} Running continuous batch assignment for slot {slot}")
+            final_scores = await self.tasks.run_continuous_task_assignment(slot)
+            
+            if final_scores:
+                logger.info(f"✅ {self.uid_prefix} Continuous task assignment completed: "
+                           f"{len(final_scores)} miners scored for slot {slot}")
+                
+                # Display score summary
+                for miner_uid, score in final_scores.items():
+                    logger.info(f"📊 {self.uid_prefix} Final score - {miner_uid}: {score:.3f}")
+                    
+                # Store completion timestamp for this validator
+                self.core.slot_coordinator.completed_phases[slot] = {
+                    SlotPhase.TASK_ASSIGNMENT: {
+                        'completed_at': time.time(),
+                        'scores_count': len(final_scores),
+                        'validator_uid': self.core.info.uid
+                    }
+                }
             else:
-                # Continuous mode: Independent operation with minibatch
-                selected_miners = self.tasks.cardano_select_miners(slot)
+                logger.warning(f"⚠️ {self.uid_prefix} No scores generated from continuous assignment for slot {slot}")
                 
-                if selected_miners:
-                    await self.tasks.cardano_send_minibatches(slot, selected_miners)  # Use minibatch approach
-                    logger.info(f"{self.uid_prefix} Minibatch tasks completed for {len(selected_miners)} miners in slot {slot}")
-            
         except Exception as e:
             logger.error(f"{self.uid_prefix} Error in task assignment phase: {e}")
+        finally:
+            # Clean up running assignment tracking when assignment completes or fails
+            self.running_assignments.pop(slot, None)
+            
+            # Clean up old slot entries (keep only last 10 slots to prevent memory leak)
+            current_slot = self.core.get_current_blockchain_slot()
+            old_slots = [s for s in self.running_assignments.keys() if s < current_slot - 10]
+            for old_slot in old_slots:
+                self.running_assignments.pop(old_slot, None)
+            
+            logger.debug(f"🧹 {self.uid_prefix} Cleaned up assignment tracking for slot {slot}")
 
     async def _handle_task_execution_phase(self, slot: int):
-        """Handle task execution phase."""
+        """Handle task execution phase independently."""
         logger.debug(f"{self.uid_prefix} Handling task execution phase for slot {slot}")
         
         try:
-            # Register phase with slot coordinator
+            # Register phase (but continue independently)
             await self.core.slot_coordinator.register_phase_entry(slot, SlotPhase.TASK_EXECUTION)
+            logger.info(f"🔄 {self.uid_prefix} Independent task execution monitoring for slot {slot}")
             
-            # Wait for consensus to proceed
-            await self.core.slot_coordinator.wait_for_phase_consensus(slot, SlotPhase.TASK_EXECUTION)
+            # Monitor any remaining task execution and collect results
+            # In continuous assignment, most results should already be collected
+            await self.tasks.receive_results(timeout=30)  # Shorter timeout since continuous assignment handles most collection
             
-            # Monitor task execution and collect results
-            await self.tasks.receive_results(timeout=120)  # 2 minutes for results
+            logger.info(f"✅ {self.uid_prefix} Task execution phase completed for slot {slot}")
             
         except Exception as e:
             logger.error(f"{self.uid_prefix} Error in task execution phase: {e}")
 
     async def _handle_consensus_scoring_phase(self, slot: int):
-        """Handle consensus scoring phase."""
+        """Handle consensus scoring phase independently."""
         logger.debug(f"{self.uid_prefix} Handling consensus scoring phase for slot {slot}")
         
         try:
-            # In flexible mode, this phase MUST be synchronized
-            if self.core.consensus_mode == "flexible":
-                # Flexible mode: Force synchronization for consensus
-                logger.info(f"{self.uid_prefix} Flexible mode: Enforcing synchronization for consensus phase")
+            # Register phase entry (but proceed independently like Bittensor)
+            await self.core.slot_coordinator.register_phase_entry(slot, SlotPhase.CONSENSUS_SCORING)
+            logger.info(f"🎯 {self.uid_prefix} Independent consensus scoring for slot {slot}")
+            
+            # Score results independently - each validator processes their own collected results
+            # In continuous assignment, scores were already calculated, so this may be minimal
+            local_scores = self.consensus.score_miner_results()
+            
+            # Store our consensus results without waiting for other validators
+            if hasattr(self.core, 'slot_scores') and slot in self.core.slot_scores:
+                final_scores = self.core.slot_scores[slot]
+                logger.info(f"✅ {self.uid_prefix} Independent consensus completed for slot {slot}: "
+                           f"{len(final_scores)} scores processed")
                 
-                # Wait for task assignment cutoff first
-                await self.core.slot_coordinator.enforce_task_assignment_cutoff(slot)
-                
-                # Score local results
-                local_scores = self.consensus.score_miner_results()
-                
-                # Coordinate consensus with other validators (synchronized)
-                consensus_scores = await self.core.slot_coordinator.coordinate_consensus_round(slot, local_scores)
-                
-                logger.info(f"{self.uid_prefix} Flexible consensus completed for slot {slot}: {len(consensus_scores)} final scores")
-                
-            elif self.core.consensus_mode == "synchronized":
-                # Synchronized mode: Normal coordination
-                await self.core.slot_coordinator.register_phase_entry(slot, SlotPhase.CONSENSUS_SCORING)
-                
-                # Wait for consensus to proceed
-                await self.core.slot_coordinator.wait_for_phase_consensus(slot, SlotPhase.CONSENSUS_SCORING)
-                
-                # Score results and coordinate
-                local_scores = self.consensus.score_miner_results()
-                consensus_scores = await self.core.slot_coordinator.coordinate_consensus_round(slot, local_scores)
-                
-                logger.info(f"{self.uid_prefix} Synchronized consensus completed for slot {slot}")
-                
+                # Mark phase as completed
+                if slot not in self.core.slot_coordinator.completed_phases:
+                    self.core.slot_coordinator.completed_phases[slot] = {}
+                self.core.slot_coordinator.completed_phases[slot][SlotPhase.CONSENSUS_SCORING] = {
+                    'completed_at': time.time(),
+                    'scores_processed': len(final_scores),
+                    'validator_uid': self.core.info.uid
+                }
             else:
-                # Continuous mode: Independent consensus
-                local_scores = self.consensus.score_miner_results()
-                logger.info(f"{self.uid_prefix} Independent consensus completed for slot {slot}")
+                logger.info(f"📊 {self.uid_prefix} No additional scores to process for slot {slot}")
             
         except Exception as e:
             logger.error(f"{self.uid_prefix} Error in consensus scoring phase: {e}")
 
     async def _handle_metagraph_update_phase(self, slot: int):
-        """Handle metagraph update phase."""
-        logger.debug(f"{self.uid_prefix} Handling metagraph update phase for slot {slot}")
+        """Handle metagraph update phase independently."""
+        logger.debug(f"{self.uid_prefix} Handling independent metagraph update for slot {slot}")
         
         try:
             # Check if we have already processed this slot
@@ -366,52 +376,31 @@ class ValidatorNode:
             else:
                 logger.info(f"🔍 {self.uid_prefix} DEBUG: No local scores found for slot {slot}")
             
-            # REMOVED: Skip logic when no scores - now we always update
-            # Always proceed with metagraph update, even if no scores (0 scores for non-responsive miners)
-            logger.info(f"🚀 {self.uid_prefix} Starting metagraph update for slot {slot} with {len(local_scores) if local_scores else 0} scores")
+            # Register phase entry but proceed independently (Bittensor-style)
+            await self.core.slot_coordinator.register_phase_entry(slot, SlotPhase.METAGRAPH_UPDATE)
             
-            # In flexible mode, metagraph update MUST be synchronized
-            if self.core.consensus_mode == "flexible":
-                # Flexible mode: Force synchronization for metagraph update
-                logger.info(f"{self.uid_prefix} Flexible mode: Enforcing synchronization for metagraph update")
-                
-                # Register phase entry
-                await self.core.slot_coordinator.register_phase_entry(slot, SlotPhase.METAGRAPH_UPDATE)
-                
-                # Wait for other validators to be ready
-                await self.core.slot_coordinator.wait_for_phase_consensus(slot, SlotPhase.METAGRAPH_UPDATE)
-                
-                # Proceed with synchronized metagraph update
-                logger.info(f"{self.uid_prefix} All validators ready, updating metagraph for slot {slot}")
-                
-            elif self.core.consensus_mode == "synchronized":
-                # Synchronized mode: Normal coordination
-                await self.core.slot_coordinator.register_phase_entry(slot, SlotPhase.METAGRAPH_UPDATE)
-                
-                # Wait for consensus to proceed
-                await self.core.slot_coordinator.wait_for_phase_consensus(slot, SlotPhase.METAGRAPH_UPDATE)
-                
-            # else: continuous mode proceeds without coordination
+            # Always proceed with independent metagraph update
+            logger.info(f"🚀 {self.uid_prefix} Starting independent metagraph update for slot {slot} with {len(local_scores) if local_scores else 0} scores")
             
-            # Coordinate synchronized metagraph update (for flexible and synchronized modes)
-            if self.core.consensus_mode in ["flexible", "synchronized"]:
-                try:
-                    logger.info(f"🤝 {self.uid_prefix} Attempting synchronized metagraph update...")
-                    success = await self.consensus._coordinate_synchronized_metagraph_update(slot, local_scores)
-                    if success:
-                        logger.info(f"✅ {self.uid_prefix} Synchronized metagraph update completed for slot {slot}")
-                    else:
-                        logger.warning(f"⚠️  {self.uid_prefix} Synchronized update failed, falling back to individual update")
-                        await self.consensus._apply_consensus_scores_to_metagraph(slot, local_scores)
-                except Exception as e:
-                    logger.error(f"❌ {self.uid_prefix} Error in metagraph update coordination: {e}")
-                    # Fallback to individual update
-                    logger.info(f"🔄 {self.uid_prefix} Falling back to individual metagraph update...")
-                    await self.consensus._apply_consensus_scores_to_metagraph(slot, local_scores)
-            else:
-                # Continuous mode: Individual update
-                logger.info(f"🔄 {self.uid_prefix} Applying individual metagraph update...")
+            # Apply our consensus scores directly to metagraph without waiting for other validators
+            try:
+                logger.info(f"🔄 {self.uid_prefix} Applying independent metagraph update...")
                 await self.consensus._apply_consensus_scores_to_metagraph(slot, local_scores)
+                
+                logger.info(f"✅ {self.uid_prefix} Independent metagraph update completed for slot {slot}")
+                
+                # Mark metagraph update as completed
+                if slot not in self.core.slot_coordinator.completed_phases:
+                    self.core.slot_coordinator.completed_phases[slot] = {}
+                self.core.slot_coordinator.completed_phases[slot][SlotPhase.METAGRAPH_UPDATE] = {
+                    'completed_at': time.time(),
+                    'scores_applied': len(local_scores) if local_scores else 0,
+                    'validator_uid': self.core.info.uid
+                }
+                
+            except Exception as e:
+                logger.error(f"❌ {self.uid_prefix} Error in independent metagraph update: {e}")
+                raise
             
             # Submit to blockchain ALWAYS - even if we have 0 scores (important for miner penalty)
             logger.info(f"📤 {self.uid_prefix} Submitting metagraph update to blockchain for slot {slot} with {len(local_scores) if local_scores else 0} scores")
@@ -449,6 +438,11 @@ class ValidatorNode:
 
     def create_task_data(self, miner_uid: str) -> Any:
         """Create task data for a miner - must be implemented by subclasses."""
+        # Try to call subclass implementation first
+        if hasattr(self, '_create_task_data_implementation'):
+            return self._create_task_data_implementation(miner_uid)
+        
+        # Fallback to tasks module (this will likely error)
         return self.tasks.create_task_data(miner_uid)
 
     async def send_task_batch(self, miners_for_batch: List[MinerInfo], batch_num: int):

@@ -19,11 +19,12 @@ from typing import Dict, List, Any, Optional
 
 import httpx
 
-from ..core.datatypes import MinerInfo, TaskAssignment, MinerResult, ValidatorInfo
+from ..core.datatypes import MinerInfo, TaskAssignment, MinerResult, ValidatorInfo, ValidatorScore
 from ..metagraph.metagraph_datum import STATUS_ACTIVE
 from ..network.server import TaskModel
 from .selection import select_miners_logic
 from .slot_coordinator import SlotPhase
+from .continuous_task_assignment import ContinuousTaskAssignment
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,66 @@ class ValidatorNodeTasks:
         """
         self.core = core_node
         self.uid_prefix = core_node.uid_prefix
+        self.continuous_assignment = None  # Will be initialized when consensus is available
+    
+    def initialize_continuous_assignment(self, consensus_module):
+        """
+        Initialize continuous assignment module.
+        
+        Args:
+            consensus_module: Reference to ValidatorNodeConsensus instance
+        """
+        self.continuous_assignment = ContinuousTaskAssignment(self, consensus_module)
+        logger.info(f"{self.uid_prefix} Continuous task assignment initialized")
+    
+    # === Continuous Assignment Methods ===
+    
+    async def run_continuous_task_assignment(self, slot: int) -> Dict[str, float]:
+        """
+        Run continuous task assignment for the current slot.
+        
+        Args:
+            slot: Current slot number
+            
+        Returns:
+            Dictionary mapping miner_uid to final averaged score
+        """
+        if not self.continuous_assignment:
+            logger.error(f"{self.uid_prefix} Continuous assignment not initialized")
+            return {}
+        
+        # Get task assignment phase duration from slot configuration
+        phase_duration = self.core.slot_config.task_assignment_minutes
+        
+        logger.info(f"🚀 {self.uid_prefix} Starting continuous assignment for slot {slot} "
+                   f"(duration: {phase_duration} minutes)")
+        
+        try:
+            final_scores = await self.continuous_assignment.run_continuous_assignment(
+                slot, phase_duration
+            )
+            
+            # Store final scores in core state
+            self.core.slot_scores[slot] = []
+            for miner_uid, score in final_scores.items():
+                # Create ValidatorScore objects for compatibility
+                validator_score = ValidatorScore(
+                    task_id=f"continuous_slot_{slot}_final",
+                    miner_uid=miner_uid,
+                    validator_uid=self.core.info.uid,
+                    score=score,
+                    timestamp=time.time()
+                )
+                self.core.slot_scores[slot].append(validator_score)
+            
+            logger.info(f"✅ {self.uid_prefix} Continuous assignment completed for slot {slot}: "
+                       f"{len(final_scores)} miners scored")
+            
+            return final_scores
+            
+        except Exception as e:
+            logger.error(f"❌ {self.uid_prefix} Error in continuous assignment for slot {slot}: {e}")
+            return {}
     
     # === Miner Selection Methods ===
     
@@ -165,7 +226,7 @@ class ValidatorNodeTasks:
         """
         Create specific task data for a miner.
         
-        This is an abstract method that should be overridden by subnet-specific validators.
+        This method delegates to the validator node's create_task_data implementation.
         
         Args:
             miner_uid: The UID of the miner receiving the task
@@ -176,6 +237,15 @@ class ValidatorNodeTasks:
         Raises:
             NotImplementedError: If not overridden by the subclass
         """
+        # Delegate to the validator node's create_task_data method
+        if hasattr(self.core, 'validator_node') and hasattr(self.core.validator_node, 'create_task_data'):
+            return self.core.validator_node.create_task_data(miner_uid)
+        
+        # Check if validator instance is available with create_task_data
+        if hasattr(self.core, 'validator_instance') and hasattr(self.core.validator_instance, 'create_task_data'):
+            return self.core.validator_instance.create_task_data(miner_uid)
+        
+        # Final fallback - error
         logger.error(f"{self.uid_prefix} create_task_data must be implemented by subnet validator for miner {miner_uid}")
         raise NotImplementedError("Subnet Validator must implement task creation logic")
 

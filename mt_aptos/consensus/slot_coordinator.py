@@ -116,6 +116,9 @@ class SlotCoordinator:
         self.coordination_dir.mkdir(exist_ok=True)
         self.slot_config = slot_config or SlotConfig()
         
+        # Track completed phases for independent operation
+        self.completed_phases: Dict[int, Dict[SlotPhase, Any]] = {}
+        
         logger.debug(f"SlotCoordinator initialized for {validator_uid}")
         logger.debug(f"Slot config: {self.slot_config.slot_duration_minutes}min slots, {self.slot_config.task_assignment_minutes}min assignment")
         

@@ -1,65 +1,115 @@
+#!/usr/bin/env python3
+"""
+ModernTensor Aptos Tool (MTAT) - Setup Script
+
+This setup script allows you to install MTAT as a global command
+that can be used from anywhere in your system.
+"""
+
 from setuptools import setup, find_packages
+import os
+from pathlib import Path
+
+# Read the README file
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text() if (this_directory / "README.md").exists() else ""
+
+# Read requirements
+def read_requirements():
+    requirements_file = this_directory / "requirements.txt"
+    if requirements_file.exists():
+        with open(requirements_file, 'r') as f:
+            return [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    return []
+
+# Get version
+def get_version():
+    version_file = this_directory / "mt_aptos" / "__init__.py"
+    if version_file.exists():
+        with open(version_file, 'r') as f:
+            for line in f:
+                if line.startswith('__version__'):
+                    return line.split('=')[1].strip().strip('"').strip("'")
+    return "0.1.0"
 
 setup(
-    name="moderntensor",
-    version="0.1.0",
+    name="moderntensor-aptos-tool",
+    version=get_version(),
+    description="ModernTensor Aptos Tool (MTAT) - CLI for ModernTensor blockchain operations",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    author="ModernTensor Foundation",
+    author_email="team@moderntensor.org",
+    url="https://github.com/sonson0910/moderntensor_aptos",
+    project_urls={
+        "Bug Reports": "https://github.com/sonson0910/moderntensor_aptos/issues",
+        "Source": "https://github.com/sonson0910/moderntensor_aptos",
+        "Documentation": "https://github.com/sonson0910/moderntensor_aptos/blob/main/docs/",
+        "Telegram": "https://t.me/+pDRlNXTi1wY2NTY1"
+    },
+    
+    # Package discovery
     packages=find_packages(),
-    install_requires=[
-        # Aptos blockchain SDK
-        "aptos-sdk>=0.10.0",
-        
-        # Core utilities and crypto
-        "bip_utils>=2.9.3", 
-        "cryptography>=41.0.0",
-        
-        # HTTP clients and web framework
-        "httpx>=0.24.0",
-        "aiohttp>=3.8.4",
-        "fastapi>=0.100.0",
-        "uvicorn>=0.23.0",
-        
-        # Data validation and configuration
-        "pydantic>=2.0.0",
-        "pydantic-settings>=2.0.0",
-        "python-dotenv>=1.0.0",
-        "PyYAML>=6.0",
-        
-        # Data processing
-        "numpy>=1.24.3",
-        "pandas>=2.0.1",
-        
-        # CLI and UI
-        "click>=8.1.3",
-        "rich>=13.0.0",
-        
-        # Logging
-        "loguru>=0.7.0",
-        "structlog>=23.1.0",
-        "coloredlogs>=15.0.0",
-        
-        # System monitoring
-        "psutil>=5.9.0",
-        "prometheus_client>=0.17.0",
-        
-        # Performance and serialization
-        "orjson>=3.9.0",
-        "marshmallow>=3.19.0",
-    ],
+    include_package_data=True,
+    
+    # Dependencies
+    install_requires=read_requirements(),
+    
+    # Python version requirement
+    python_requires=">=3.8",
+    
+    # Console scripts - this creates the global "mtat" command
     entry_points={
         "console_scripts": [
-            "aptosctl=moderntensor.mt_aptos.cli.main:aptosctl",
+            "mtat=moderntensor.mt_aptos.cli.mtat_main:main",
         ],
     },
-    author="ModernTensor",
-    author_email="your.email@example.com",
-    description="A command line interface for managing Aptos accounts and operations",
-    long_description=open("README.md").read(),
-    long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/moderntensor",
+    
+    # Package data
+    package_data={
+        "moderntensor": [
+            "mt_aptos/config/*.py",
+            "mt_aptos/scripts/*.move",
+            "mt_aptos/bytecode/**/*.mv",
+            "requirements.txt",
+        ],
+    },
+    
+    # Classifiers
     classifiers=[
-        "Programming Language :: Python :: 3",
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: System :: Distributed Computing",
+        "Topic :: Office/Business :: Financial :: Investment",
     ],
-    python_requires=">=3.7",
+    
+    # Keywords
+    keywords="moderntensor aptos blockchain cryptocurrency cli tool",
+    
+    # Extras
+    extras_require={
+        "dev": [
+            "pytest>=6.0",
+            "pytest-asyncio",
+            "black",
+            "flake8",
+            "mypy",
+        ],
+        "test": [
+            "pytest>=6.0", 
+            "pytest-asyncio",
+            "pytest-cov",
+        ],
+    },
+    
+    # Zip safe
+    zip_safe=False,
 ) 

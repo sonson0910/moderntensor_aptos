@@ -24,6 +24,7 @@ import uvicorn
 from ..core.datatypes import ValidatorScore, MinerResult, ValidatorInfo
 from ..network.app.api.v1.endpoints.validator_health import router as health_router
 from ..network.server import TaskModel, ResultModel
+from .network_resilience import NetworkResilientClient, CircuitBreakerError, create_retry_config, create_circuit_config
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ class ValidatorNodeNetwork:
         
         # Network components
         self.http_client = None
+        self.resilient_client: Optional[NetworkResilientClient] = None
         self.api_server = None
         self.health_server = None
         self.server_task = None
@@ -64,32 +66,59 @@ class ValidatorNodeNetwork:
         # API app
         self.app = None
         
-        # Initialize HTTP client
+        # Initialize HTTP clients
         asyncio.create_task(self._initialize_http_client())
     
     # === HTTP Client Management ===
     
     async def _initialize_http_client(self):
-        """Initialize the HTTP client for P2P communication."""
+        """Initialize the HTTP clients for P2P communication."""
         try:
+            # Initialize basic HTTP client (for backward compatibility)
             self.http_client = httpx.AsyncClient(
                 timeout=HTTP_TIMEOUT,
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=10)
             )
             self.core.http_client = self.http_client
             
-            logger.info(f"{self.uid_prefix} HTTP client initialized")
+            # Initialize resilient client with retry and circuit breaker
+            retry_config = create_retry_config(
+                max_retries=MAX_RETRIES,
+                base_delay=1.0,
+                max_delay=30.0
+            )
+            circuit_config = create_circuit_config(
+                failure_threshold=3,  # Open circuit after 3 consecutive failures
+                recovery_timeout=30.0  # Try recovery after 30 seconds
+            )
+            
+            self.resilient_client = NetworkResilientClient(
+                retry_config=retry_config,
+                circuit_config=circuit_config,
+                connection_limits=httpx.Limits(max_connections=30, max_keepalive_connections=15),
+                timeout=HTTP_TIMEOUT
+            )
+            await self.resilient_client.start()
+            
+            logger.info(f"{self.uid_prefix} HTTP clients initialized (basic + resilient)")
             
         except Exception as e:
-            logger.error(f"{self.uid_prefix} Error initializing HTTP client: {e}")
+            logger.error(f"{self.uid_prefix} Error initializing HTTP clients: {e}")
 
     async def close_http_client(self):
-        """Close the HTTP client."""
+        """Close the HTTP clients."""
+        # Close resilient client
+        if self.resilient_client:
+            await self.resilient_client.stop()
+            self.resilient_client = None
+        
+        # Close basic HTTP client  
         if self.http_client:
             await self.http_client.aclose()
             self.http_client = None
             self.core.http_client = None
-            logger.info(f"{self.uid_prefix} HTTP client closed")
+            
+        logger.info(f"{self.uid_prefix} HTTP clients closed")
 
     # === API Server Management ===
     
@@ -361,7 +390,7 @@ class ValidatorNodeNetwork:
     
     async def send_p2p_message(self, target_validator: ValidatorInfo, endpoint: str, payload: Dict) -> bool:
         """
-        Send a P2P message to another validator.
+        Send a P2P message to another validator with resilient retry logic.
         
         Args:
             target_validator: Target validator info
@@ -377,9 +406,30 @@ class ValidatorNodeNetwork:
             logger.warning(f"{self.uid_prefix} No API endpoint for validator {target_validator.uid}")
             return False
         
+        url = f"{validator_endpoint.rstrip('/')}/{endpoint.lstrip('/')}"
+        
+        # Use resilient client if available, otherwise fallback to basic client
+        if self.resilient_client:
+            try:
+                response = await self.resilient_client.post(
+                    url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                logger.debug(f"{self.uid_prefix} P2P message sent to {target_validator.uid}: {endpoint}")
+                return True
+                
+            except CircuitBreakerError:
+                logger.warning(f"{self.uid_prefix} Circuit breaker open for {target_validator.uid}, skipping P2P message")
+                return False
+                
+            except Exception as e:
+                logger.warning(f"{self.uid_prefix} Resilient P2P message failed to {target_validator.uid}: {e}")
+                return False
+        
+        # Fallback to basic client
         try:
-            url = f"{validator_endpoint.rstrip('/')}/{endpoint.lstrip('/')}"
-            
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
                 response = await client.post(
                     url,
@@ -388,7 +438,7 @@ class ValidatorNodeNetwork:
                 )
                 
                 if response.status_code == 200:
-                    logger.debug(f"{self.uid_prefix} P2P message sent to {target_validator.uid}: {endpoint}")
+                    logger.debug(f"{self.uid_prefix} P2P message sent to {target_validator.uid}: {endpoint} (fallback)")
                     return True
                 else:
                     logger.warning(f"{self.uid_prefix} P2P message failed to {target_validator.uid}: HTTP {response.status_code}")
@@ -503,7 +553,7 @@ class ValidatorNodeNetwork:
     
     async def send_task_to_miner(self, miner_endpoint: str, task: TaskModel) -> bool:
         """
-        Send a task to a miner.
+        Send a task to a miner with resilient retry logic.
         
         Args:
             miner_endpoint: Miner's API endpoint
@@ -516,9 +566,30 @@ class ValidatorNodeNetwork:
             logger.warning(f"{self.uid_prefix} No endpoint provided for task {task.task_id}")
             return False
 
+        url = f"{miner_endpoint.rstrip('/')}/receive-task"
+        
+        # Use resilient client if available, otherwise fallback to basic client
+        if self.resilient_client:
+            try:
+                response = await self.resilient_client.post(
+                    url,
+                    json=task.dict(),
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                logger.debug(f"{self.uid_prefix} Task {task.task_id} sent successfully to {miner_endpoint}")
+                return True
+                
+            except CircuitBreakerError:
+                logger.warning(f"{self.uid_prefix} Circuit breaker open for miner {miner_endpoint}, skipping task {task.task_id}")
+                return False
+                
+            except Exception as e:
+                logger.warning(f"{self.uid_prefix} Resilient task send failed to {miner_endpoint}: {e}")
+                return False
+        
+        # Fallback to basic client
         try:
-            url = f"{miner_endpoint.rstrip('/')}/receive-task"
-            
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
                 response = await client.post(
                     url,
@@ -527,7 +598,7 @@ class ValidatorNodeNetwork:
                 )
                 
                 if response.status_code == 200:
-                    logger.debug(f"{self.uid_prefix} Task {task.task_id} sent successfully to {miner_endpoint}")
+                    logger.debug(f"{self.uid_prefix} Task {task.task_id} sent successfully to {miner_endpoint} (fallback)")
                     return True
                 else:
                     logger.warning(f"{self.uid_prefix} Task {task.task_id} failed: HTTP {response.status_code}")
@@ -536,6 +607,57 @@ class ValidatorNodeNetwork:
         except Exception as e:
             logger.error(f"{self.uid_prefix} Network error sending task {task.task_id}: {e}")
             return False
+    
+    # === Network Health and Statistics ===
+    
+    def get_network_health_stats(self) -> Dict[str, Any]:
+        """Get comprehensive network health statistics"""
+        stats = {
+            "resilient_client_available": self.resilient_client is not None,
+            "basic_client_available": self.http_client is not None,
+            "api_server_running": self.server_task is not None and not self.server_task.done()
+        }
+        
+        if self.resilient_client:
+            stats.update({
+                "resilient_stats": self.resilient_client.get_overall_stats(),
+                "endpoint_stats": {
+                    endpoint: self.resilient_client.get_endpoint_stats(endpoint)
+                    for endpoint in self.resilient_client.endpoint_health.keys()
+                }
+            })
+        
+        return stats
+    
+    async def perform_network_health_check(self) -> Dict[str, bool]:
+        """Perform a comprehensive network health check"""
+        results = {}
+        
+        # Check if clients are available
+        results["basic_client_healthy"] = self.http_client is not None
+        results["resilient_client_healthy"] = self.resilient_client is not None
+        
+        # Check API server
+        results["api_server_healthy"] = (
+            self.server_task is not None and 
+            not self.server_task.done()
+        )
+        
+        # If resilient client is available, get circuit states
+        if self.resilient_client:
+            healthy_endpoints = 0
+            total_endpoints = len(self.resilient_client.endpoint_health)
+            
+            for health in self.resilient_client.endpoint_health.values():
+                if health.circuit_state.value == "closed":
+                    healthy_endpoints += 1
+            
+            results["circuit_breakers_healthy"] = (
+                total_endpoints == 0 or  # No endpoints tracked yet
+                healthy_endpoints / total_endpoints >= 0.5  # At least 50% healthy
+            )
+        
+        return results
 
     async def get_miner_status(self, miner_endpoint: str) -> Optional[Dict]:
         """

@@ -25,6 +25,8 @@ from ..core.datatypes import MinerInfo, TaskAssignment, MinerResult, ValidatorSc
 from ..metagraph.metagraph_datum import STATUS_ACTIVE
 from ..network.server import TaskModel
 from .slot_coordinator import SlotPhase
+from .score_validation import ScoreValidator, create_score_entry, create_score_validator
+from .error_recovery import AutoRecovery, ErrorSeverity, auto_recover, setup_component_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,20 @@ class ContinuousTaskAssignment:
         self.max_concurrent_tasks = getattr(self.core.settings, 'CONTINUOUS_MAX_CONCURRENT', 10)
         self.retry_failed_tasks = getattr(self.core.settings, 'CONTINUOUS_RETRY_FAILED', True)
         self.adaptive_batch_sizing = getattr(self.core.settings, 'CONTINUOUS_ADAPTIVE_BATCH', True)
+        
+        # Score validation and aggregation
+        self.score_validator = create_score_validator(
+            outlier_detection="both",
+            strict_validation=True
+        )
+        
+        # Error recovery system
+        self.auto_recovery = AutoRecovery()
+        setup_component_recovery(
+            component_name="continuous_task_assignment",
+            recovery_system=self.auto_recovery,
+            restart_func=self._restart_assignment_system
+        )
         
         # Dynamic performance tracking
         self.recent_success_rates = deque(maxlen=5)  # Track last 5 batches
@@ -465,7 +481,7 @@ class ContinuousTaskAssignment:
     
     def _score_single_result(self, task_data: Any, result_data: Any) -> float:
         """
-        Score a single result using the validator's scoring logic.
+        Score a single result using the validator's scoring logic with enhanced validation.
         
         Args:
             task_data: Original task data
@@ -483,6 +499,34 @@ class ContinuousTaskAssignment:
             # If scoring returns 0.0 (default), use our enhanced scoring
             if score == 0.0:
                 score = self._enhanced_scoring_logic(task_data, result_data)
+            
+            # Validate score using score validator
+            miner_uid = result_data.get('miner_uid', 'unknown') if isinstance(result_data, dict) else 'unknown'
+            task_id = task_data.get('task_id', 'unknown') if isinstance(task_data, dict) else 'unknown'
+            
+            if miner_uid != 'unknown' and task_id != 'unknown':
+                score_entry = create_score_entry(
+                    task_id=task_id,
+                    miner_uid=miner_uid,
+                    validator_uid=self.core.info.uid,
+                    score=score,
+                    response_time=result_data.get('generation_time') if isinstance(result_data, dict) else None,
+                    quality_metrics={
+                        'has_result': bool(result_data.get('result') or result_data.get('output')) if isinstance(result_data, dict) else False,
+                        'has_url': bool(result_data.get('image_url') or result_data.get('result_url')) if isinstance(result_data, dict) else False,
+                        'has_model_info': bool(result_data.get('model_version')) if isinstance(result_data, dict) else False
+                    }
+                )
+                
+                # Validate the score
+                validation_result, error_msg = self.score_validator.validate_score_entry(score_entry)
+                if validation_result.value != "valid":
+                    logger.warning(f"⚠️ {self.uid_prefix} Score validation warning: {validation_result.value} - {error_msg}")
+                    # Apply score adjustment based on validation result
+                    if validation_result.value == "anomaly":
+                        # Reduce anomaly scores slightly
+                        score = score * 0.9
+                        logger.debug(f"🔧 {self.uid_prefix} Applied anomaly adjustment: {score:.3f}")
             
             # Ensure score is in valid range
             return max(0.0, min(1.0, score))
@@ -557,7 +601,7 @@ class ContinuousTaskAssignment:
     
     def _calculate_final_scores(self) -> Dict[str, float]:
         """
-        Calculate final averaged scores for all miners.
+        Calculate final averaged scores for all miners using enhanced validation and aggregation.
         
         Returns:
             Dictionary mapping miner_uid to final averaged score
@@ -566,6 +610,13 @@ class ContinuousTaskAssignment:
         
         # Get aggregation method from settings
         aggregation_method = getattr(self.core.settings, 'CONTINUOUS_SCORE_AGGREGATION', SCORE_AGGREGATION_METHOD)
+        
+        # Get validation statistics for monitoring
+        validation_stats = self.score_validator.get_validation_statistics()
+        if validation_stats['total_scores_processed'] > 0:
+            logger.info(f"📊 {self.uid_prefix} Score validation stats: "
+                       f"valid={validation_stats['valid_score_rate']:.1%}, "
+                       f"outliers={validation_stats['outlier_rate']:.1%}")
         
         for miner_uid, scores in self.miner_scores.items():
             if scores:
@@ -600,6 +651,27 @@ class ContinuousTaskAssignment:
         # self.recent_success_rates.clear()
         
         logger.debug(f"🔄 {self.uid_prefix} Reset state for new slot")
+    
+    async def _restart_assignment_system(self):
+        """Restart the continuous assignment system after failure"""
+        logger.info(f"🔄 {self.uid_prefix} Restarting continuous assignment system")
+        
+        try:
+            # Reset state
+            self._reset_slot_state()
+            
+            # Clear any pending operations
+            self.core.miner_is_busy.clear()
+            
+            # Reinitialize adaptive settings
+            self.recent_success_rates.clear()
+            self.avg_response_time = 15.0
+            
+            logger.info(f"✅ {self.uid_prefix} Continuous assignment system restarted successfully")
+            
+        except Exception as e:
+            logger.error(f"❌ {self.uid_prefix} Failed to restart assignment system: {e}")
+            raise
     
     def _log_assignment_summary(self, slot: int, total_rounds: int, final_scores: Dict[str, float]) -> None:
         """Log a summary of the assignment session."""

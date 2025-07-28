@@ -28,6 +28,8 @@ from ..config.settings import settings
 from ..core.datatypes import ValidatorInfo, MinerInfo, CycleConsensusResults, MinerConsensusResult
 from ..metagraph.hash.hash_datum import hash_data
 from ..monitoring.circuit_breaker import CircuitBreaker
+from .resource_manager import ResourceManager, setup_basic_cleanup
+from .consensus_coordinator import ConsensusCoordinator, setup_consensus_coordination
 from ..monitoring.rate_limiter import RateLimiter
 from ..monitoring.metrics import get_metrics_manager
 from .slot_coordinator import SlotCoordinator, SlotPhase, SlotConfig
@@ -148,6 +150,12 @@ class ValidatorNodeCore:
         
         # Reference to subnet validator instance for scoring
         self.validator_instance = None
+        
+        # Resource management
+        self.resource_manager = setup_basic_cleanup(self)
+        
+        # Consensus coordination
+        self.consensus_coordinator = setup_consensus_coordination(self)
         
         logger.info(f"✅ {self.uid_prefix} ValidatorNodeCore initialized successfully")
         logger.debug(f"{self.uid_prefix} State file: {self.state_file}")
